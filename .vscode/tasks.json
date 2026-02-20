@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Deploy Firebase (rules + functions)",
+			"type": "shell",
+			"command": "cd functions; npm install; npm run build; cd ..; firebase deploy --only firestore:rules,functions",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

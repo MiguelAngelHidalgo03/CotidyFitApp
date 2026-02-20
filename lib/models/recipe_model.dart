@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'price_tier.dart';
+
 enum DietType {
   vegetarian,
   vegan,
@@ -206,6 +208,7 @@ class RecipeModel {
     required this.id,
     required this.name,
     required this.country,
+    required this.priceTier,
     required this.ratingAvg,
     required this.ratingCount,
     required this.likes,
@@ -227,6 +230,8 @@ class RecipeModel {
   final String id;
   final String name;
   final String country;
+
+  final PriceTier priceTier;
 
   final double ratingAvg;
   final int ratingCount;
@@ -260,6 +265,7 @@ class RecipeModel {
         'id': id,
         'name': name,
         'country': country,
+      'priceTier': priceTier.name,
         'ratingAvg': ratingAvg,
         'ratingCount': ratingCount,
         'likes': likes,
@@ -282,6 +288,7 @@ class RecipeModel {
     final id = json['id'];
     final name = json['name'];
     final country = json['country'];
+    final priceTierRaw = json['priceTier'];
     final ratingAvg = json['ratingAvg'];
     final ratingCount = json['ratingCount'];
     final likes = json['likes'];
@@ -306,6 +313,10 @@ class RecipeModel {
     final macrosCasted = macros.map((k, v) => MapEntry(k.toString(), v));
     final macrosObj = RecipeMacros.fromJson(macrosCasted);
     if (macrosObj == null) return null;
+
+    final priceTier = priceTierRaw is String
+      ? PriceTier.values.where((e) => e.name == priceTierRaw).cast<PriceTier?>().firstOrNull
+      : null;
 
     List<T> parseEnumList<T extends Enum>(
       Object? raw,
@@ -369,6 +380,7 @@ class RecipeModel {
       id: id,
       name: name,
       country: country,
+      priceTier: priceTier ?? PriceTier.medium,
       ratingAvg: ratingAvg.toDouble(),
       ratingCount: ratingCount.toInt(),
       likes: likes.toInt(),

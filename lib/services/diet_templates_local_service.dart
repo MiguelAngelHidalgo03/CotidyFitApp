@@ -1,4 +1,5 @@
 import '../models/diet_template_model.dart';
+import '../models/price_tier.dart';
 import 'diet_templates_repository.dart';
 
 class DietTemplatesLocalService implements DietTemplatesRepository {
@@ -6,6 +7,7 @@ class DietTemplatesLocalService implements DietTemplatesRepository {
     DietTemplateModel(
       id: 'tpl_fat_loss_v1',
       kind: DietTemplateKind.fatLoss,
+      priceTier: PriceTier.medium,
       estimatedCalories: 1800,
       macros: MacroSplit(proteinPct: 35, carbsPct: 35, fatPct: 30),
       exampleDay: [
@@ -31,6 +33,7 @@ class DietTemplatesLocalService implements DietTemplatesRepository {
     DietTemplateModel(
       id: 'tpl_maintenance_v1',
       kind: DietTemplateKind.maintenance,
+      priceTier: PriceTier.high,
       estimatedCalories: 2300,
       macros: MacroSplit(proteinPct: 30, carbsPct: 40, fatPct: 30),
       exampleDay: [
@@ -55,6 +58,7 @@ class DietTemplatesLocalService implements DietTemplatesRepository {
     DietTemplateModel(
       id: 'tpl_bulk_v1',
       kind: DietTemplateKind.bulk,
+      priceTier: PriceTier.economical,
       estimatedCalories: 2800,
       macros: MacroSplit(proteinPct: 25, carbsPct: 50, fatPct: 25),
       exampleDay: [

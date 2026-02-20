@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'price_tier.dart';
 enum DietTemplateKind {
   fatLoss,
   maintenance,
@@ -71,6 +72,7 @@ class DietTemplateModel {
   const DietTemplateModel({
     required this.id,
     required this.kind,
+    required this.priceTier,
     required this.estimatedCalories,
     required this.macros,
     required this.exampleDay,
@@ -79,6 +81,7 @@ class DietTemplateModel {
 
   final String id;
   final DietTemplateKind kind;
+  final PriceTier priceTier;
   final int estimatedCalories;
   final MacroSplit macros;
   final List<DietExampleMeal> exampleDay;
@@ -87,6 +90,7 @@ class DietTemplateModel {
   Map<String, Object?> toJson() => {
         'id': id,
         'kind': kind.name,
+      'priceTier': priceTier.name,
         'estimatedCalories': estimatedCalories,
         'macros': macros.toJson(),
         'exampleDay': exampleDay.map((e) => e.toJson()).toList(),
@@ -96,6 +100,11 @@ class DietTemplateModel {
   factory DietTemplateModel.fromJson(Map<String, Object?> json) {
     final kindRaw = (json['kind'] as String?) ?? DietTemplateKind.maintenance.name;
     final kind = DietTemplateKind.values.where((e) => e.name == kindRaw).cast<DietTemplateKind?>().firstOrNull ?? DietTemplateKind.maintenance;
+
+    final priceTierRaw = json['priceTier'];
+    final priceTier = priceTierRaw is String
+        ? PriceTier.values.where((e) => e.name == priceTierRaw).cast<PriceTier?>().firstOrNull
+        : null;
 
     int readInt(String key, int fallback) {
       final v = json[key];
@@ -130,6 +139,7 @@ class DietTemplateModel {
     return DietTemplateModel(
       id: (json['id'] as String?) ?? '',
       kind: kind,
+      priceTier: priceTier ?? PriceTier.medium,
       estimatedCalories: readInt('estimatedCalories', 2200),
       macros: macros,
       exampleDay: example,

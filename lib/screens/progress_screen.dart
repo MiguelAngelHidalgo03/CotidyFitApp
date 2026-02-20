@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme.dart';
+import '../models/progress_week_summary.dart';
+import '../models/user_profile.dart';
+import '../models/weight_entry.dart';
 import '../services/local_storage_service.dart';
+import '../services/profile_service.dart';
 import '../services/progress_service.dart';
+import '../services/progress_week_summary_service.dart';
 import '../services/weight_service.dart';
-import '../services/workout_history_service.dart';
 import '../utils/date_utils.dart';
-import '../widgets/progress/progress_day_sheet.dart';
-import '../widgets/progress/progress_future_tracking.dart';
+import '../widgets/progress/header_profile.dart';
+import '../widgets/progress/progress_constancy_card.dart';
+import '../widgets/progress/progress_health_summary_card.dart';
 import '../widgets/progress/progress_insights_section.dart';
-import '../widgets/progress/progress_metrics_grid.dart';
-import '../widgets/progress/progress_month_calendar.dart';
+import '../widgets/progress/progress_nutrition_compliance_card.dart';
 import '../widgets/progress/progress_premium_card.dart';
-import '../widgets/progress/progress_section_card.dart';
+import '../widgets/progress/progress_smart_tracking_card.dart';
+import '../widgets/progress/progress_weight_summary_card.dart';
 import 'profile_screen.dart';
 
 class ProgressScreen extends StatefulWidget {
@@ -26,16 +30,15 @@ class _ProgressScreenState extends State<ProgressScreen> {
   late final LocalStorageService _storage;
   late final ProgressService _service;
   late final WeightService _weightService;
-  late final WorkoutHistoryService _workoutHistory;
+  late final ProfileService _profiles;
+  late final ProgressWeekSummaryService _weekSummaryService;
 
   ProgressData? _data;
   WeightSummary? _weight;
   Map<String, int> _cfHistory = const {};
-  Map<String, String> _completedWorkoutsByDate = const {};
+  UserProfile? _profile;
+  ProgressWeekSummary? _weekSummary;
   bool _loading = true;
-
-  late DateTime _focusedDay;
-  DateTime? _selectedDay;
 
   @override
   void initState() {
@@ -43,27 +46,26 @@ class _ProgressScreenState extends State<ProgressScreen> {
     _storage = LocalStorageService();
     _service = ProgressService(storage: _storage);
     _weightService = WeightService();
-    _workoutHistory = WorkoutHistoryService();
-
-    final today = DateUtilsCF.dateOnly(DateTime.now());
-    _focusedDay = DateTime(today.year, today.month, 1);
-    _selectedDay = today;
+    _profiles = ProfileService();
+    _weekSummaryService = ProgressWeekSummaryService(storage: _storage);
 
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final d = await _service.loadProgress(days: 7);
-    final w = await _weightService.getSummary(maxPoints: 30);
+    final data = await _service.loadProgress(days: 7);
+    final weight = await _weightService.getSummary(maxPoints: 30);
     final history = await _storage.getCfHistory();
-    final workouts = await _workoutHistory.getCompletedWorkoutsByDate();
+    final profile = await _profiles.getOrCreateProfile();
+    final weekSummary = await _weekSummaryService.getCurrentWeekSummary();
     if (!mounted) return;
     setState(() {
-      _data = d;
-      _weight = w;
+      _data = data;
+      _weight = weight;
       _cfHistory = history;
-      _completedWorkoutsByDate = workouts;
+      _profile = profile;
+      _weekSummary = weekSummary;
       _loading = false;
     });
   }
@@ -108,18 +110,21 @@ class _ProgressScreenState extends State<ProgressScreen> {
     if (result == null) return;
 
     await _weightService.upsertToday(result);
-    final w = await _weightService.getSummary(maxPoints: 30);
+    final weight = await _weightService.getSummary(maxPoints: 30);
     if (!mounted) return;
-    setState(() => _weight = w);
+    setState(() => _weight = weight);
   }
 
   @override
   Widget build(BuildContext context) {
+    final data = _data;
+    final weekSummary = _weekSummary;
+
     return Scaffold(
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : _data == null
+            : data == null || weekSummary == null
                 ? Center(
                     child: Text(
                       'No hay datos aún.',
@@ -130,244 +135,64 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     onRefresh: _load,
                     child: ListView(
                       padding: const EdgeInsets.all(20),
-                      children: _buildBody(context, _data!),
+                      children: _buildBody(context, data, weekSummary),
                     ),
                   ),
       ),
     );
   }
 
-  List<Widget> _buildBody(BuildContext context, ProgressData data) {
-    final avgMessage = _service.motivationalMessageForAverage(data.average7Days);
-    final calendarData = _buildCalendarData();
-    final monthAverage = _monthAverageCf(_focusedDay, _cfHistory);
+  List<Widget> _buildBody(
+    BuildContext context,
+    ProgressData data,
+    ProgressWeekSummary weekSummary,
+  ) {
+    final monthAverage = _monthAverageCf(DateTime.now(), _cfHistory);
     final maxStreak = _maxStreakFromHistory(_cfHistory);
-    final insights = _buildInsights(data: data);
+
+    final weight = _weight;
+    final latest = weight?.latest;
+    final last30 = (weight?.history ?? const <WeightEntry>[]).toList();
+    final weekDiff = weight?.diffFromWeekBefore;
+    final monthDiff = _diffFromDaysBefore(last30, days: 30);
+
+    final insights = _buildWeeklyAnalysis(data: data, weekSummary: weekSummary);
 
     return [
-      Row(
-        children: [
-          Expanded(
-            child: Text('Progreso', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          IconButton(
-            tooltip: 'Perfil',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ProfileScreen()),
-              );
-            },
-            icon: const Icon(Icons.person_outline),
-          ),
-        ],
-      ),
-      const SizedBox(height: 10),
-      _ProgressHeroCard(
-        currentCf: data.currentCf,
-        average7Days: data.average7Days,
-        message: avgMessage,
-      ),
-      const SizedBox(height: 18),
-      ProgressMonthCalendar(
-        focusedDay: _focusedDay,
-        selectedDay: _selectedDay,
-        dataByDateKey: calendarData,
-        onPrevMonth: _prevMonth,
-        onNextMonth: _nextMonth,
-        onPickMonthYear: _pickMonthYear,
-        onDaySelected: (d) {
-          setState(() {
-            _selectedDay = d;
-            _focusedDay = DateTime(d.year, d.month, 1);
-          });
-          _openDaySheet(d);
+      HeaderProfile(
+        profile: _profile,
+        onOpenProfile: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          );
         },
       ),
-      const SizedBox(height: 18),
-      ProgressMetricsGrid(
-        last7Days: data.last7Days,
-        monthAverageCf: monthAverage,
-        weight: _weight,
+      const SizedBox(height: 14),
+      ProgressConstancyCard(
+        weekPoints: data.last7Days,
+        monthCf: monthAverage,
         maxStreak: maxStreak,
-        totalWorkouts: _completedWorkoutsByDate.length,
-        nutritionPercentLabel: '— (próximamente)',
-        onAddWeight: _addWeightFlow,
       ),
-      const SizedBox(height: 18),
-      const ProgressFutureTracking(),
-      const SizedBox(height: 18),
+      const SizedBox(height: 14),
+      ProgressHealthSummaryCard(summary: weekSummary),
+      const SizedBox(height: 14),
+      ProgressWeightSummaryCard(
+        latest: latest,
+        weekDiffKg: weekDiff,
+        monthDiffKg: monthDiff,
+        last30Days: last30,
+        onAdd: _addWeightFlow,
+      ),
+      const SizedBox(height: 14),
+      ProgressNutritionComplianceCard(summary: weekSummary),
+      const SizedBox(height: 14),
+      ProgressSmartTrackingCard(summary: weekSummary),
+      const SizedBox(height: 14),
       ProgressInsightsSection(insights: insights),
-      const SizedBox(height: 18),
+      const SizedBox(height: 14),
       const ProgressPremiumCard(),
       const SizedBox(height: 10),
     ];
-  }
-
-  Map<String, ProgressCalendarDayData> _buildCalendarData() {
-    final keys = <String>{..._cfHistory.keys, ..._completedWorkoutsByDate.keys};
-    final out = <String, ProgressCalendarDayData>{};
-    for (final k in keys) {
-      out[k] = ProgressCalendarDayData(
-        cf: _cfHistory[k] ?? 0,
-        trained: _completedWorkoutsByDate.containsKey(k),
-      );
-    }
-    return out;
-  }
-
-  void _prevMonth() {
-    setState(() {
-      _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
-    });
-  }
-
-  void _nextMonth() {
-    setState(() {
-      _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
-    });
-  }
-
-  Future<void> _pickMonthYear() async {
-    final picked = await _showMonthYearPickerSheet(initialMonth: _focusedDay);
-    if (picked == null) return;
-    if (!mounted) return;
-    setState(() {
-      _focusedDay = DateTime(picked.year, picked.month, 1);
-    });
-  }
-
-  Future<DateTime?> _showMonthYearPickerSheet({required DateTime initialMonth}) {
-    final initialYear = initialMonth.year;
-    final initialMonthNumber = initialMonth.month;
-
-    return showModalBottomSheet<DateTime>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        var selectedYear = initialYear;
-        var selectedMonth = initialMonthNumber;
-
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: StatefulBuilder(
-              builder: (context, setSheetState) {
-                return ProgressSectionCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Mes y año',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close),
-                            tooltip: 'Cerrar',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        height: 220,
-                        child: YearPicker(
-                          firstDate: DateTime(2020, 1, 1),
-                          lastDate: DateTime(2100, 12, 31),
-                          selectedDate: DateTime(selectedYear, 1, 1),
-                          onChanged: (d) {
-                            setSheetState(() => selectedYear = d.year);
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: List.generate(12, (i) {
-                          final m = i + 1;
-                          final isSelected = selectedMonth == m;
-                          return ChoiceChip(
-                            label: Text(_monthShortLabel(m)),
-                            selected: isSelected,
-                            onSelected: (_) {
-                              setSheetState(() => selectedMonth = m);
-                            },
-                            selectedColor: CFColors.primary.withValues(alpha: 0.12),
-                            labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: isSelected ? CFColors.primary : CFColors.textSecondary,
-                                ),
-                            side: BorderSide(
-                              color: isSelected ? CFColors.primary : CFColors.softGray,
-                            ),
-                            backgroundColor: CFColors.background,
-                          );
-                        }),
-                      ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () {
-                            Navigator.of(context).pop(DateTime(selectedYear, selectedMonth, 1));
-                          },
-                          child: const Text('Aplicar'),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _monthShortLabel(int month) {
-    const months = <String>[
-      'Ene',
-      'Feb',
-      'Mar',
-      'Abr',
-      'May',
-      'Jun',
-      'Jul',
-      'Ago',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dic',
-    ];
-    return months[(month - 1).clamp(0, 11)];
-  }
-
-  void _openDaySheet(DateTime day) {
-    final key = DateUtilsCF.toKey(day);
-    final cf = _cfHistory[key] ?? 0;
-    final workoutName = _completedWorkoutsByDate[key];
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        return ProgressDaySheet(
-          details: ProgressDayDetails(day: day, cf: cf, workoutName: workoutName),
-        );
-      },
-    );
   }
 
   int _monthAverageCf(DateTime focusedMonth, Map<String, int> history) {
@@ -411,161 +236,123 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return best;
   }
 
-  List<ProgressInsight> _buildInsights({required ProgressData data}) {
+  List<ProgressInsight> _buildWeeklyAnalysis({
+    required ProgressData data,
+    required ProgressWeekSummary weekSummary,
+  }) {
     final insights = <ProgressInsight>[];
 
-    if (data.average7Days >= 80) {
-      insights.add(const ProgressInsight(
-        icon: Icons.star_outline,
-        title: 'Constancia alta',
-        description: 'Tu promedio semanal está en un nivel excelente. Mantén el ritmo.',
-      ));
-    } else if (data.average7Days >= 50) {
-      insights.add(const ProgressInsight(
-        icon: Icons.trending_up,
-        title: 'Buen progreso',
-        description: 'Vas bien. Con 1-2 días fuertes más, subes de nivel rápido.',
-      ));
-    } else {
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final weekday = today.weekday; // Mon=1..Sun=7
+
+    final activeDays = weekSummary.activeDays;
+    final trainedMinutes = weekSummary.trainedMinutes;
+    final hydrationPct = weekSummary.hydrationAveragePercent;
+    final energyAvg = weekSummary.energyAverage;
+
+    if (weekday <= DateTime.tuesday && activeDays == 0) {
       insights.add(const ProgressInsight(
         icon: Icons.rocket_launch_outlined,
-        title: 'Oportunidad esta semana',
-        description: 'Un pequeño empujón diario puede cambiar tu promedio en pocos días.',
+        title: 'La semana acaba de empezar',
+        description: 'Aún estás a tiempo: un entreno ligero hoy te pone en marcha.',
+      ));
+    } else if (activeDays >= 3 && data.average7Days >= 60) {
+      insights.add(const ProgressInsight(
+        icon: Icons.star_outline,
+        title: 'Gran comienzo de semana',
+        description: 'Buen ritmo. Mantén consistencia y tu CF lo reflejará.',
+      ));
+    } else if (activeDays <= 1 && weekday >= DateTime.thursday) {
+      insights.add(const ProgressInsight(
+        icon: Icons.fitness_center_outlined,
+        title: 'Añade un entrenamiento ligero',
+        description: 'Una sesión corta puede mejorar tu semana sin agotarte.',
       ));
     }
 
-    final p = data.last7Days;
-    if (p.length >= 6) {
-      final a1 = ((p[0].value + p[1].value + p[2].value) / 3).round();
-      final a2 = ((p[4].value + p[5].value + p[6].value) / 3).round();
+    if (hydrationPct < 60) {
+      insights.add(const ProgressInsight(
+        icon: Icons.water_drop_outlined,
+        title: 'Hidratación baja',
+        description: 'Prueba 2–3 recordatorios al día o añade 250 ml tras cada comida.',
+      ));
+    } else if (hydrationPct >= 85) {
+      insights.add(const ProgressInsight(
+        icon: Icons.water_drop_outlined,
+        title: 'Hidratación sólida',
+        description: 'Muy buen hábito esta semana. Eso ayuda a energía y recuperación.',
+      ));
+    }
+
+    if (energyAvg != null && energyAvg <= 2.6) {
+      insights.add(const ProgressInsight(
+        icon: Icons.bedtime_outlined,
+        title: 'Revisa tu descanso',
+        description: 'Tu energía está baja. Prioriza sueño y un día más suave de entreno.',
+      ));
+    }
+
+    final points = data.last7Days;
+    if (points.length >= 6) {
+      final a1 = ((points[0].value + points[1].value + points[2].value) / 3).round();
+      final a2 = ((points[points.length - 3].value + points[points.length - 2].value + points[points.length - 1].value) / 3).round();
       if (a2 >= a1 + 8) {
         insights.add(const ProgressInsight(
           icon: Icons.trending_up,
           title: 'Tendencia al alza',
-          description: 'Tu CF reciente está mejorando. Sigue repitiendo lo que te funciona.',
+          description: 'Tu CF está subiendo. Repite lo que funcionó estos días.',
         ));
       } else if (a1 >= a2 + 8) {
         insights.add(const ProgressInsight(
           icon: Icons.trending_down,
           title: 'Bajada reciente',
-          description: 'Esta semana aflojó un poco. Vuelve a lo básico: agua, pasos y entreno.',
+          description: 'Vuelve a lo básico: agua, movimiento y una comida completa.',
         ));
       } else {
         insights.add(const ProgressInsight(
           icon: Icons.insights_outlined,
           title: 'Semana estable',
-          description: 'Tu CF está consistente. Un hábito extra puede empujarte hacia arriba.',
+          description: 'Estás consistente. Un pequeño hábito puede empujarte hacia arriba.',
         ));
       }
     }
 
-    final today = DateUtilsCF.dateOnly(DateTime.now());
-    var workouts7 = 0;
-    for (var i = 0; i < 7; i++) {
-      final d = today.subtract(Duration(days: i));
-      final k = DateUtilsCF.toKey(d);
-      if (_completedWorkoutsByDate.containsKey(k)) workouts7 += 1;
+    if (trainedMinutes >= 120) {
+      insights.add(const ProgressInsight(
+        icon: Icons.timer_outlined,
+        title: 'Volumen semanal alto',
+        description: 'Buen total de minutos. Recuerda alternar intensidad y recuperación.',
+      ));
     }
-    insights.add(ProgressInsight(
-      icon: Icons.fitness_center_outlined,
-      title: 'Entrenos últimos 7 días',
-      description: workouts7 == 0
-          ? 'Aún no hay entrenos registrados esta semana.'
-          : 'Llevas $workouts7 entreno${workouts7 == 1 ? '' : 's'} esta semana.',
-    ));
 
+    if (insights.isEmpty) {
+      insights.add(const ProgressInsight(
+        icon: Icons.insights_outlined,
+        title: 'Sigue registrando',
+        description: 'Con 2–3 días más de datos, tu análisis semanal será más preciso.',
+      ));
+    }
+
+    if (insights.length > 4) return insights.sublist(0, 4);
     return insights;
   }
-}
 
-class _ProgressHeroCard extends StatelessWidget {
-  const _ProgressHeroCard({
-    required this.currentCf,
-    required this.average7Days,
-    required this.message,
-  });
+  double? _diffFromDaysBefore(List<WeightEntry> history, {required int days}) {
+    if (history.isEmpty) return null;
 
-  final int currentCf;
-  final int average7Days;
-  final String message;
+    final latest = history.last;
+    final target = latest.date.subtract(Duration(days: days));
 
-  @override
-  Widget build(BuildContext context) {
-    return ProgressSectionCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            message,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: CFColors.textPrimary,
-                ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _HeroMetric(
-                  title: 'CF actual',
-                  value: '$currentCf',
-                  subtitle: 'de 100',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _HeroMetric(
-                  title: 'Prom. 7 días',
-                  value: '$average7Days',
-                  subtitle: 'de 100',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+    WeightEntry? candidate;
+    for (var i = history.length - 1; i >= 0; i--) {
+      final e = history[i];
+      if (!e.date.isAfter(target)) {
+        candidate = e;
+        break;
+      }
+    }
+    if (candidate == null) return null;
+    return latest.weight - candidate.weight;
   }
 }
 
-class _HeroMetric extends StatelessWidget {
-  const _HeroMetric({
-    required this.title,
-    required this.value,
-    required this.subtitle,
-  });
-
-  final String title;
-  final String value;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: CFColors.background,
-        borderRadius: const BorderRadius.all(Radius.circular(18)),
-        border: Border.all(color: CFColors.softGray),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: CFColors.primary,
-                ),
-          ),
-          const SizedBox(height: 3),
-          Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-        ],
-      ),
-    );
-  }
-}

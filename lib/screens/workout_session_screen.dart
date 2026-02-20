@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../models/exercise.dart';
 import '../models/workout.dart';
 import '../services/workout_session_service.dart';
+import '../services/workout_sound_service.dart';
 
 class WorkoutSessionScreen extends StatefulWidget {
   const WorkoutSessionScreen({super.key, required this.workout});
@@ -27,6 +28,12 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   int? _remainingSeconds;
 
   Exercise get _current => widget.workout.exercises[_index];
+
+  static const _exerciseMotivation = <String>[
+    '¡Sigue así!',
+    'Buen ritmo',
+    'Vas genial',
+  ];
 
   @override
   void initState() {
@@ -92,6 +99,13 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
           _remainingSeconds = 0;
           _isRunning = false;
         });
+        // Play configurable end sound (stored in Profile > Configuración).
+        // Fire-and-forget to avoid blocking UI.
+        // ignore: discarded_futures
+        WorkoutSoundService().playSelectedEndSound();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Temporizador finalizado.')),
+        );
         return;
       }
 
@@ -101,6 +115,11 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
   void _markCompleted() {
     if (_isSummary) return;
+
+    final msg = _exerciseMotivation[_index % _exerciseMotivation.length];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+    );
 
     if (_index >= widget.workout.exercises.length - 1) {
       _timer?.cancel();
@@ -170,6 +189,19 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Container(
+                height: 140,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: CFColors.primary.withValues(alpha: 0.06),
+                  borderRadius: const BorderRadius.all(Radius.circular(16)),
+                  border: Border.all(color: CFColors.primary.withValues(alpha: 0.14)),
+                ),
+                child: const Center(
+                  child: Icon(Icons.image_outlined, color: CFColors.primary, size: 40),
+                ),
+              ),
+              const SizedBox(height: 12),
               Text(
                 ex.name,
                 style: theme.textTheme.headlineSmall?.copyWith(
@@ -179,6 +211,20 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               ),
               const SizedBox(height: 10),
               Text(ex.repsOrTime, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 10),
+              Text(
+                'Descripción: próximamente.',
+                style: theme.textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _VariantChip(text: 'Variante A'),
+                  _VariantChip(text: 'Variante B'),
+                ],
+              ),
               if (seconds != null) ...[
                 const SizedBox(height: 14),
                 Text(
@@ -230,10 +276,11 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('¡Entrenamiento completado!', style: theme.textTheme.headlineSmall),
+        Text('Excelente trabajo 💪', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(
-          'Se aplicará un bonus de +${WorkoutSessionService.cfBonus} al CF de hoy.',
+          'Has completado tu entrenamiento de hoy.\n'
+          'Minutos activos: ${widget.workout.durationMinutes} min · Impacto CF: +${WorkoutSessionService.cfBonus}',
           style: theme.textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
         ),
         const SizedBox(height: 18),
@@ -279,6 +326,31 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _VariantChip extends StatelessWidget {
+  const _VariantChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: CFColors.primary.withValues(alpha: 0.08),
+        borderRadius: const BorderRadius.all(Radius.circular(999)),
+        border: Border.all(color: CFColors.primary.withValues(alpha: 0.16)),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: CFColors.primary,
+            ),
+      ),
     );
   }
 }

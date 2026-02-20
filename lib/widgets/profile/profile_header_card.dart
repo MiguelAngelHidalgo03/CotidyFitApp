@@ -8,18 +8,24 @@ class ProfileHeaderCard extends StatelessWidget {
   const ProfileHeaderCard({
     super.key,
     required this.profile,
-    required this.maxStreak,
-    required this.onEditProfile,
     required this.onEditAvatar,
+    required this.onEditName,
+    required this.onEditPressed,
+    this.identityTag,
+    this.onCopyIdentityTag,
   });
 
   final UserProfile profile;
-  final int maxStreak;
-  final VoidCallback onEditProfile;
   final VoidCallback onEditAvatar;
+  final VoidCallback onEditName;
+  final VoidCallback onEditPressed;
+  final String? identityTag;
+  final VoidCallback? onCopyIdentityTag;
 
   @override
   Widget build(BuildContext context) {
+    final tag = (identityTag ?? '').trim();
+
     return ProgressSectionCard(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -56,35 +62,66 @@ class ProfileHeaderCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        profile.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                      child: InkWell(
+                        onTap: onEditName,
+                        borderRadius: const BorderRadius.all(Radius.circular(12)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            profile.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                          ),
+                        ),
                       ),
                     ),
                     _PremiumBadge(isPremium: profile.isPremium),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  children: [
-                    _Pill(icon: Icons.flag_outlined, label: profile.goal),
-                    _Pill(icon: Icons.school_outlined, label: profile.level.label),
-                    _Pill(icon: Icons.local_fire_department_outlined, label: 'Racha máx. $maxStreak'),
-                  ],
+                if (tag.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          tag,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: CFColors.textSecondary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: onCopyIdentityTag,
+                        icon: const Icon(Icons.copy_outlined, size: 18),
+                        color: CFColors.textSecondary,
+                        tooltip: 'Copiar',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text(
+                  profile.isPremium ? 'Suscripción: Premium activo' : 'Suscripción: Gratuito',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: CFColors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
                 const SizedBox(height: 12),
                 SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: onEditProfile,
-                    icon: const Icon(Icons.edit_note_outlined),
-                    label: const Text('Editar perfil'),
+                  height: 40,
+                  child: OutlinedButton.icon(
+                    onPressed: onEditPressed,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Editar'),
                   ),
                 ),
               ],
@@ -126,36 +163,6 @@ class _AvatarCircle extends StatelessWidget {
         border: Border.all(color: CFColors.softGray),
       ),
       child: Icon(icon, color: CFColors.primary, size: 34),
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  const _Pill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: CFColors.background,
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: CFColors.primary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
     );
   }
 }

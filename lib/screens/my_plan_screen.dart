@@ -102,7 +102,7 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
     final plan = _ensurePlan();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mi Plan')),
+      appBar: AppBar(title: const Text('Mi semana')),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -117,7 +117,10 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
                       onNext: _nextWeek,
                     ),
                     const SizedBox(height: 12),
-                    Text('Semana', style: Theme.of(context).textTheme.titleLarge),
+                    Text(
+                      'Semana',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                     const SizedBox(height: 10),
                     for (var i = 0; i < 7; i++) ...[
                       _DayPlanRow(
@@ -131,27 +134,12 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
                       if (i != 6) const SizedBox(height: 10),
                     ],
                     const SizedBox(height: 18),
-                    Text('Arrastra y suelta', style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 10),
-                    ProgressSectionCard(
-                      padding: const EdgeInsets.all(12),
-                      child: SizedBox(
-                        height: 92,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _workouts.getAllWorkouts().length,
-                          separatorBuilder: (_, index) => const SizedBox(width: 10),
-                          itemBuilder: (context, index) {
-                            final w = _workouts.getAllWorkouts()[index];
-                            return _DraggableWorkoutPill(workout: w);
-                          },
-                        ),
-                      ),
+                    Text(
+                      'Historial semanal',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 18),
-                    Text('Historial', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 10),
-                    _HistoryCard(completedByDate: _completedByDate),
+                    _WeeklyHistoryCard(completedByDate: _completedByDate),
                     const SizedBox(height: 10),
                   ],
                 ),
@@ -162,7 +150,11 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
 }
 
 class _WeekHeader extends StatelessWidget {
-  const _WeekHeader({required this.weekStart, required this.onPrev, required this.onNext});
+  const _WeekHeader({
+    required this.weekStart,
+    required this.onPrev,
+    required this.onNext,
+  });
 
   final DateTime weekStart;
   final VoidCallback onPrev;
@@ -171,7 +163,8 @@ class _WeekHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final end = weekStart.add(const Duration(days: 6));
-    final label = '${weekStart.day.toString().padLeft(2, '0')}/${weekStart.month.toString().padLeft(2, '0')}'
+    final label =
+        '${weekStart.day.toString().padLeft(2, '0')}/${weekStart.month.toString().padLeft(2, '0')}'
         ' — '
         '${end.day.toString().padLeft(2, '0')}/${end.month.toString().padLeft(2, '0')}';
 
@@ -186,7 +179,9 @@ class _WeekHeader extends StatelessWidget {
           child: Center(
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
             ),
           ),
         ),
@@ -221,129 +216,271 @@ class _DayPlanRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = _weekdayLabel(dayIndex);
 
-    return DragTarget<Workout>(
-      onAcceptWithDetails: (details) => onAssign(details.data),
-      builder: (context, candidateData, rejectedData) {
-        final isActive = candidateData.isNotEmpty;
-
-        return ProgressSectionCard(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: (isActive ? CFColors.primary : CFColors.background).withValues(alpha: isActive ? 0.10 : 1.0),
-                  borderRadius: const BorderRadius.all(Radius.circular(18)),
-                  border: Border.all(color: isActive ? CFColors.primary : CFColors.softGray),
+    return ProgressSectionCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: CFColors.background,
+              borderRadius: const BorderRadius.all(Radius.circular(18)),
+              border: Border.all(color: CFColors.softGray),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: CFColors.textPrimary,
                 ),
-                child: Center(
-                  child: Text(
-                    label,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 4),
+                if (workout == null)
+                  Text(
+                    'Sin entrenamiento',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: isActive ? CFColors.primary : CFColors.textPrimary,
-                        ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      fontWeight: FontWeight.w900,
                     ),
-                    const SizedBox(height: 4),
-                    if (workout == null)
-                      Text(
-                        isActive ? 'Suelta aquí para asignar' : 'Sin entrenamiento',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
-                      )
-                    else
-                      Draggable<Workout>(
-                        data: workout!,
-                        feedback: Material(
-                          color: Colors.transparent,
-                          child: _WorkoutPill(workout: workout!, elevated: true),
+                  )
+                else
+                  _WorkoutPill(workout: workout!),
+              ],
+            ),
+          ),
+          if (workout == null)
+            IconButton(
+              onPressed: () async {
+                final picked = await showModalBottomSheet<Workout>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) {
+                    var query = '';
+                    WorkoutDifficulty? difficulty;
+                    WorkoutDurationFilter? duration;
+
+                    final searchCtrl = TextEditingController();
+
+                    return SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 16,
+                          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
                         ),
-                        childWhenDragging: Text(
-                          'Moviendo…',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        child: _WorkoutPill(workout: workout!),
-                      ),
-                  ],
-                ),
-              ),
-              if (workout == null)
-                IconButton(
-                  onPressed: () async {
-                    final picked = await showModalBottomSheet<Workout>(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) {
-                        return SafeArea(
-                          top: false,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: ProgressSectionCard(
+                        child: StatefulBuilder(
+                          builder: (context, setSheetState) {
+                            List<Workout> filtered() {
+                              final q = query.trim().toLowerCase();
+                              final out = <Workout>[];
+                              for (final w in allWorkouts) {
+                                if (q.isNotEmpty &&
+                                    !w.name.toLowerCase().contains(q)) {
+                                  continue;
+                                }
+                                if (difficulty != null &&
+                                    w.difficulty != difficulty) {
+                                  continue;
+                                }
+                                if (duration != null &&
+                                    !duration!.matchesMinutes(
+                                      w.durationMinutes,
+                                    )) {
+                                  continue;
+                                }
+                                out.add(w);
+                              }
+                              out.sort(
+                                (a, b) => a.durationMinutes.compareTo(
+                                  b.durationMinutes,
+                                ),
+                              );
+                              return out;
+                            }
+
+                            final results = filtered();
+
+                            return ProgressSectionCard(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    'Asignar entrenamiento',
-                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'Asignar entrenamiento',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(),
+                                        icon: const Icon(Icons.close),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: searchCtrl,
+                                    onChanged: (v) =>
+                                        setSheetState(() => query = v),
+                                    decoration: const InputDecoration(
+                                      prefixIcon: Icon(Icons.search),
+                                      hintText: 'Buscar…',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        for (final d
+                                            in WorkoutDifficulty.values) ...[
+                                          ChoiceChip(
+                                            selected: difficulty == d,
+                                            onSelected: (_) => setSheetState(
+                                              () => difficulty =
+                                                  (difficulty == d) ? null : d,
+                                            ),
+                                            label: Text(d.label),
+                                            selectedColor: CFColors.primary
+                                                .withValues(alpha: 0.12),
+                                            side: BorderSide(
+                                              color: difficulty == d
+                                                  ? CFColors.primary
+                                                  : CFColors.softGray,
+                                            ),
+                                            labelStyle: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  color: difficulty == d
+                                                      ? CFColors.primary
+                                                      : CFColors.textSecondary,
+                                                ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                        ],
+                                        for (final f
+                                            in WorkoutDurationFilter
+                                                .values) ...[
+                                          ChoiceChip(
+                                            selected: duration == f,
+                                            onSelected: (_) => setSheetState(
+                                              () => duration = (duration == f)
+                                                  ? null
+                                                  : f,
+                                            ),
+                                            label: Text('${f.label} min'),
+                                            selectedColor: CFColors.primary
+                                                .withValues(alpha: 0.12),
+                                            side: BorderSide(
+                                              color: duration == f
+                                                  ? CFColors.primary
+                                                  : CFColors.softGray,
+                                            ),
+                                            labelStyle: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  color: duration == f
+                                                      ? CFColors.primary
+                                                      : CFColors.textSecondary,
+                                                ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                        ],
+                                      ],
+                                    ),
                                   ),
                                   const SizedBox(height: 10),
                                   SizedBox(
                                     height: 340,
-                                    child: ListView.separated(
-                                      itemCount: allWorkouts.length,
-                                      separatorBuilder: (_, index) => const SizedBox(height: 10),
-                                      itemBuilder: (context, index) {
-                                        final w = allWorkouts[index];
-                                        return Card(
-                                          child: ListTile(
-                                            title: Text(w.name),
-                                            subtitle: Text('${w.durationMinutes} min · ${w.level}'),
-                                            trailing: const Icon(Icons.add, color: CFColors.primary),
-                                            onTap: () => Navigator.of(context).pop(w),
+                                    child: results.isEmpty
+                                        ? Center(
+                                            child: Text(
+                                              'No se encontraron entrenamientos.',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium,
+                                            ),
+                                          )
+                                        : ListView.separated(
+                                            itemCount: results.length.clamp(
+                                              0,
+                                              40,
+                                            ),
+                                            separatorBuilder: (_, _) =>
+                                                const SizedBox(height: 10),
+                                            itemBuilder: (context, index) {
+                                              final w = results[index];
+                                              return Card(
+                                                child: ListTile(
+                                                  title: Text(w.name),
+                                                  subtitle: Text(
+                                                    '${w.durationMinutes} min · ${w.level}',
+                                                  ),
+                                                  trailing: const Icon(
+                                                    Icons.add,
+                                                    color: CFColors.primary,
+                                                  ),
+                                                  onTap: () => Navigator.of(
+                                                    context,
+                                                  ).pop(w),
+                                                ),
+                                              );
+                                            },
                                           ),
-                                        );
-                                      },
-                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ),
-                        );
-                      },
+                            );
+                          },
+                        ),
+                      ),
                     );
-
-                    if (picked != null) onAssign(picked);
                   },
-                  icon: const Icon(Icons.add_circle_outline),
-                  color: CFColors.primary,
-                  tooltip: 'Asignar',
-                )
-              else
-                IconButton(
-                  onPressed: onClear,
-                  icon: const Icon(Icons.close),
-                  color: CFColors.textSecondary,
-                  tooltip: 'Quitar',
-                ),
-            ],
-          ),
-        );
-      },
+                );
+
+                if (picked != null) onAssign(picked);
+              },
+              icon: const Icon(Icons.add_circle_outline),
+              color: CFColors.primary,
+              tooltip: 'Asignar',
+            )
+          else
+            IconButton(
+              onPressed: onClear,
+              icon: const Icon(Icons.close),
+              color: CFColors.textSecondary,
+              tooltip: 'Quitar',
+            ),
+        ],
+      ),
     );
   }
 
@@ -353,29 +490,10 @@ class _DayPlanRow extends StatelessWidget {
   }
 }
 
-class _DraggableWorkoutPill extends StatelessWidget {
-  const _DraggableWorkoutPill({required this.workout});
-
-  final Workout workout;
-
-  @override
-  Widget build(BuildContext context) {
-    return Draggable<Workout>(
-      data: workout,
-      feedback: Material(
-        color: Colors.transparent,
-        child: _WorkoutPill(workout: workout, elevated: true),
-      ),
-      child: _WorkoutPill(workout: workout),
-    );
-  }
-}
-
 class _WorkoutPill extends StatelessWidget {
-  const _WorkoutPill({required this.workout, this.elevated = false});
+  const _WorkoutPill({required this.workout});
 
   final Workout workout;
-  final bool elevated;
 
   @override
   Widget build(BuildContext context) {
@@ -386,15 +504,7 @@ class _WorkoutPill extends StatelessWidget {
         color: CFColors.background,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
         border: Border.all(color: CFColors.softGray),
-        boxShadow: elevated
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : const [],
+        boxShadow: const [],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -403,7 +513,9 @@ class _WorkoutPill extends StatelessWidget {
             workout.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 4),
           Text(
@@ -416,19 +528,43 @@ class _WorkoutPill extends StatelessWidget {
   }
 }
 
-class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({required this.completedByDate});
+class _WeeklyHistoryCard extends StatelessWidget {
+  const _WeeklyHistoryCard({required this.completedByDate});
 
   final Map<String, String> completedByDate;
 
+  DateTime _mondayOf(DateTime d) {
+    final weekday = d.weekday; // Mon=1..Sun=7
+    final delta = weekday - DateTime.monday;
+    return d.subtract(Duration(days: delta));
+  }
+
+  String _weekLabel(DateTime start) {
+    final end = start.add(const Duration(days: 6));
+    return '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}'
+        ' — '
+        '${end.day.toString().padLeft(2, '0')}/${end.month.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final entries = completedByDate.entries.toList()
-      ..sort((a, b) => b.key.compareTo(a.key));
+    final items = <DateTime, List<MapEntry<String, String>>>{};
+    for (final e in completedByDate.entries) {
+      final d = DateUtilsCF.fromKey(e.key);
+      if (d == null) continue;
+      final day = DateUtilsCF.dateOnly(d);
+      final weekStart = _mondayOf(day);
+      (items[weekStart] ??= []).add(e);
+    }
 
-    final recent = entries.take(7).toList();
+    final weekStarts = items.keys.toList()..sort((a, b) => b.compareTo(a));
+    final currentWeek = _mondayOf(DateUtilsCF.dateOnly(DateTime.now()));
+    final previousWeeks = weekStarts
+        .where((w) => w.isBefore(currentWeek))
+        .take(6)
+        .toList();
 
-    if (recent.isEmpty) {
+    if (previousWeeks.isEmpty) {
       return ProgressSectionCard(
         child: Text(
           'Aún no hay entrenamientos completados.',
@@ -441,12 +577,49 @@ class _HistoryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (var i = 0; i < recent.length; i++) ...[
-            _HistoryRow(dateKey: recent[i].key, workoutName: recent[i].value),
-            if (i != recent.length - 1) const SizedBox(height: 10),
+          for (var i = 0; i < previousWeeks.length; i++) ...[
+            _WeekHistoryBlock(
+              weekStart: previousWeeks[i],
+              label: _weekLabel(previousWeeks[i]),
+              entries: (items[previousWeeks[i]] ?? [])
+                ..sort((a, b) => b.key.compareTo(a.key)),
+            ),
+            if (i != previousWeeks.length - 1) const SizedBox(height: 14),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _WeekHistoryBlock extends StatelessWidget {
+  const _WeekHistoryBlock({
+    required this.weekStart,
+    required this.label,
+    required this.entries,
+  });
+
+  final DateTime weekStart;
+  final String label;
+  final List<MapEntry<String, String>> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 10),
+        for (var i = 0; i < entries.length; i++) ...[
+          _HistoryRow(dateKey: entries[i].key, workoutName: entries[i].value),
+          if (i != entries.length - 1) const SizedBox(height: 10),
+        ],
+      ],
     );
   }
 }
@@ -473,7 +646,10 @@ class _HistoryRow extends StatelessWidget {
             color: CFColors.primary.withValues(alpha: 0.10),
             borderRadius: const BorderRadius.all(Radius.circular(16)),
           ),
-          child: const Icon(Icons.fitness_center_outlined, color: CFColors.primary),
+          child: const Icon(
+            Icons.fitness_center_outlined,
+            color: CFColors.primary,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -484,7 +660,9 @@ class _HistoryRow extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 workoutName,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
             ],
           ),

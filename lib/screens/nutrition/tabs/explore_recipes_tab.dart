@@ -62,14 +62,10 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   }
 
   Future<void> _openFilters() async {
-    final availableCountries = {
-      for (final r in _all) r.country,
-    }.toList()
+    final availableCountries = {for (final r in _all) r.country}.toList()
       ..sort();
 
-    final availableUtensils = {
-      for (final r in _all) ...r.utensils,
-    }.toList()
+    final availableUtensils = {for (final r in _all) ...r.utensils}.toList()
       ..sort();
 
     final updated = await showModalBottomSheet<RecipeFilters>(
@@ -91,7 +87,9 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
 
   Future<void> _openRecipe(RecipeModel recipe) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipeId: recipe.id)),
+      MaterialPageRoute(
+        builder: (_) => RecipeDetailScreen(recipeId: recipe.id),
+      ),
     );
     await _load();
   }
@@ -104,7 +102,10 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
 
     final popular = _popularSorted.take(8).toList();
     final popularIds = {for (final r in popular) r.id};
-    final recommended = _recommendedSorted.where((r) => !popularIds.contains(r.id)).take(8).toList();
+    final recommended = _recommendedSorted
+        .where((r) => !popularIds.contains(r.id))
+        .take(8)
+        .toList();
     final allList = _popularSorted;
 
     return Column(
@@ -164,9 +165,15 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Sin resultados', style: Theme.of(context).textTheme.titleLarge),
+                        Text(
+                          'Sin resultados',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
                         const SizedBox(height: 6),
-                        Text('Prueba a quitar filtros o buscar otro ingrediente.', style: Theme.of(context).textTheme.bodyMedium),
+                        Text(
+                          'Prueba a quitar filtros o buscar otro ingrediente.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
                       ],
                     ),
                   ),
@@ -179,12 +186,15 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: popular.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
                       itemBuilder: (context, index) {
                         final r = popular[index];
                         return SizedBox(
                           width: 340,
-                          child: RecipeCompactCard(recipe: r, onTap: () => _openRecipe(r)),
+                          child: RecipeCompactCard(
+                            recipe: r,
+                            onTap: () => _openRecipe(r),
+                          ),
                         );
                       },
                     ),
@@ -199,12 +209,15 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: recommended.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
                       itemBuilder: (context, index) {
                         final r = recommended[index];
                         return SizedBox(
                           width: 340,
-                          child: RecipeCompactCard(recipe: r, onTap: () => _openRecipe(r)),
+                          child: RecipeCompactCard(
+                            recipe: r,
+                            onTap: () => _openRecipe(r),
+                          ),
                         );
                       },
                     ),
@@ -240,7 +253,9 @@ class _SectionHeader extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
         ),
       ],

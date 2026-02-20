@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../core/home_navigation.dart';
 import 'community_screen.dart';
 import 'home_screen.dart';
 import 'nutrition_screen.dart';
@@ -40,53 +41,64 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: PageView(
-        controller: _controller,
-        onPageChanged: (value) => setState(() => _index = value),
-        children: _tabs,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
-        onTap: (value) {
-          setState(() => _index = value);
-          _controller.animateToPage(
-            value,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
-          );
-        },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: CFColors.primary,
-        unselectedItemColor: CFColors.textSecondary,
-        showUnselectedLabels: true,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.restaurant_outlined),
-            activeIcon: Icon(Icons.restaurant),
-            label: 'Nutrición',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.groups_outlined),
-            activeIcon: Icon(Icons.groups),
-            label: 'Comunidad',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.fitness_center_outlined),
-            activeIcon: Icon(Icons.fitness_center),
-            label: 'Entrenamiento',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.query_stats_outlined),
-            activeIcon: Icon(Icons.query_stats),
-            label: 'Progreso',
-          ),
-        ],
+    return HomeNavigation(
+      currentIndex: _index,
+      goToTab: (value) {
+        setState(() => _index = value);
+        _controller.animateToPage(
+          value,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      },
+      child: Scaffold(
+        body: PageView(
+          controller: _controller,
+          onPageChanged: (value) => setState(() => _index = value),
+          children: _tabs,
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _index,
+          onTap: (value) {
+            setState(() => _index = value);
+            _controller.animateToPage(
+              value,
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+            );
+          },
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: CFColors.primary,
+          unselectedItemColor: CFColors.textSecondary,
+          showUnselectedLabels: true,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.restaurant_outlined),
+              activeIcon: Icon(Icons.restaurant),
+              label: 'Nutrición',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.groups_outlined),
+              activeIcon: Icon(Icons.groups),
+              label: 'Comunidad',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Inicio',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.fitness_center_outlined),
+              activeIcon: Icon(Icons.fitness_center),
+              label: 'Entrenamiento',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.query_stats_outlined),
+              activeIcon: Icon(Icons.query_stats),
+              label: 'Progreso',
+            ),
+          ],
+        ),
       ),
     );
   }

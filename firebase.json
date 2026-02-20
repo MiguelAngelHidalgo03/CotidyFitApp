@@ -1,0 +1,40 @@
+{
+	"flutter": {
+		"platforms": {
+			"android": {
+				"default": {
+					"projectId": "cotidyfitapp-bbdd",
+					"appId": "1:385697279961:android:a10814b723b7060404b3c8",
+					"fileOutput": "android/app/google-services.json"
+				}
+			},
+			"dart": {
+				"lib/firebase_options.dart": {
+					"projectId": "cotidyfitapp-bbdd",
+					"configurations": {
+						"android": "1:385697279961:android:a10814b723b7060404b3c8",
+						"ios": "1:385697279961:ios:02dc3b0528058ded04b3c8",
+						"macos": "1:385697279961:ios:02dc3b0528058ded04b3c8",
+						"web": "1:385697279961:web:8b18f30028c6fb9604b3c8",
+						"windows": "1:385697279961:web:410ed1187031c39d04b3c8"
+					}
+				}
+			}
+		}
+	},
+	"firestore": {
+		"rules": "firestore.rules"
+	},
+	"functions": [
+		{
+			"source": "functions",
+			"codebase": "default",
+			"ignore": [
+				"node_modules",
+				".git",
+				"firebase-debug.log",
+				"firebase-debug.*.log"
+			]
+		}
+	]
+}

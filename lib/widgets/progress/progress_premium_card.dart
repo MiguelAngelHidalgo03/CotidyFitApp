@@ -1,8 +1,7 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../services/subscription_service.dart';
 import 'progress_section_card.dart';
 
 class ProgressPremiumCard extends StatelessWidget {
@@ -10,9 +9,14 @@ class ProgressPremiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        ProgressSectionCard(
+    return FutureBuilder<bool>(
+      future: SubscriptionService.hasAccess(),
+      builder: (context, snapshot) {
+        final hasAccess = snapshot.data ?? false;
+
+        return ProgressSectionCard(
+          backgroundColor: CFColors.primary.withValues(alpha: 0.05),
+          borderColor: CFColors.primary.withValues(alpha: 0.18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -25,44 +29,99 @@ class ProgressPremiumCard extends StatelessWidget {
                       color: CFColors.primary.withValues(alpha: 0.10),
                       borderRadius: const BorderRadius.all(Radius.circular(16)),
                     ),
-                    child: const Icon(Icons.lock_outline, color: CFColors.primary),
+                    child: Icon(
+                      hasAccess
+                          ? Icons.workspace_premium_outlined
+                          : Icons.lock_outline,
+                      color: CFColors.primary,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Análisis Premium',
+                      'Premium',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
                     ),
                   ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: hasAccess
+                          ? Colors.green.withValues(alpha: 0.12)
+                          : Colors.amber.withValues(alpha: 0.12),
+                      borderRadius: const BorderRadius.all(Radius.circular(999)),
+                      border: Border.all(
+                        color: hasAccess
+                            ? Colors.green.withValues(alpha: 0.35)
+                            : Colors.amber.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: Text(
+                      hasAccess ? 'Activo' : 'Bloqueado',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: hasAccess
+                                ? Colors.green.shade800
+                                : Colors.amber.shade900,
+                          ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Gráficas avanzadas, comparativas mensuales y análisis automático.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              const SizedBox(height: 12),
+              const _BenefitRow(text: 'Gráficas avanzadas'),
+              const SizedBox(height: 8),
+              const _BenefitRow(text: 'Comparativas mensuales'),
+              const SizedBox(height: 8),
+              const _BenefitRow(text: 'Análisis automático'),
+              const SizedBox(height: 8),
+              const _BenefitRow(text: 'Recomendaciones personalizadas'),
               const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: null,
-                  child: const Text('Desbloquear (próximamente)'),
+                  onPressed: hasAccess
+                      ? null
+                      : () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'La activación de Premium no está disponible desde la app en esta versión.',
+                              ),
+                            ),
+                          );
+                        },
+                  child: Text(hasAccess ? 'Premium activo' : 'Desbloquear Premium'),
                 ),
               ),
             ],
           ),
-        ),
-        Positioned.fill(
-          child: ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(20)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: Container(
-                color: Colors.white.withValues(alpha: 0.04),
-              ),
-            ),
+        );
+      },
+    );
+  }
+}
+
+class _BenefitRow extends StatelessWidget {
+  const _BenefitRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(Icons.check_circle_outline, size: 18, color: CFColors.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: CFColors.textPrimary,
+                ),
           ),
         ),
       ],

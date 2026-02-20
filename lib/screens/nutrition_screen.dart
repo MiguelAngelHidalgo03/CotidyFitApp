@@ -14,13 +14,13 @@ class NutritionScreen extends StatelessWidget {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Nutrición'),
+          toolbarHeight: 0,
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
               Tab(text: 'Plantillas'),
               Tab(text: 'Explorar recetas'),
-              Tab(text: 'Favoritas'),
+              Tab(text: 'Recetas favoritas'),
               Tab(text: 'Mi día'),
             ],
           ),

@@ -25,7 +25,7 @@ class ProgressInsightsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Insights', style: Theme.of(context).textTheme.titleLarge),
+        Text('Tu análisis semanal', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 10),
         for (var i = 0; i < insights.length; i++) ...[
           _InsightCard(insight: insights[i]),

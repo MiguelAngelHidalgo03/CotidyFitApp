@@ -1,4 +1,5 @@
 import 'recipe_model.dart';
+import 'price_tier.dart';
 
 class RecipeFilters {
   const RecipeFilters({
@@ -7,6 +8,7 @@ class RecipeFilters {
     this.durationRanges = const {},
     this.mealTypes = const {},
     this.goals = const {},
+    this.priceTiers = const {},
     this.countries = const {},
     this.utensils = const {},
     this.difficulties = const {},
@@ -17,6 +19,7 @@ class RecipeFilters {
   final Set<DurationRange> durationRanges;
   final Set<MealType> mealTypes;
   final Set<RecipeGoal> goals;
+  final Set<PriceTier> priceTiers;
   final Set<String> countries;
   final Set<String> utensils;
   final Set<DifficultyLevel> difficulties;
@@ -27,6 +30,7 @@ class RecipeFilters {
     Set<DurationRange>? durationRanges,
     Set<MealType>? mealTypes,
     Set<RecipeGoal>? goals,
+    Set<PriceTier>? priceTiers,
     Set<String>? countries,
     Set<String>? utensils,
     Set<DifficultyLevel>? difficulties,
@@ -37,6 +41,7 @@ class RecipeFilters {
       durationRanges: durationRanges ?? this.durationRanges,
       mealTypes: mealTypes ?? this.mealTypes,
       goals: goals ?? this.goals,
+      priceTiers: priceTiers ?? this.priceTiers,
       countries: countries ?? this.countries,
       utensils: utensils ?? this.utensils,
       difficulties: difficulties ?? this.difficulties,
@@ -49,6 +54,7 @@ class RecipeFilters {
       durationRanges.isEmpty &&
       mealTypes.isEmpty &&
       goals.isEmpty &&
+      priceTiers.isEmpty &&
       countries.isEmpty &&
       utensils.isEmpty &&
       difficulties.isEmpty;
@@ -73,6 +79,10 @@ class RecipeFilters {
     }
 
     if (goals.isNotEmpty && !recipe.goals.any(goals.contains)) {
+      return false;
+    }
+
+    if (priceTiers.isNotEmpty && !priceTiers.contains(recipe.priceTier)) {
       return false;
     }
 

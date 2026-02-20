@@ -1,8 +1,7 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../services/subscription_service.dart';
 import '../progress/progress_section_card.dart';
 
 class TrainingPremiumCard extends StatelessWidget {
@@ -10,9 +9,14 @@ class TrainingPremiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        ProgressSectionCard(
+    return FutureBuilder<bool>(
+      future: SubscriptionService.hasAccess(),
+      builder: (context, snapshot) {
+        final hasAccess = snapshot.data == true;
+
+        return ProgressSectionCard(
+          backgroundColor: CFColors.primary.withValues(alpha: 0.04),
+          borderColor: CFColors.primary.withValues(alpha: 0.18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -25,22 +29,25 @@ class TrainingPremiumCard extends StatelessWidget {
                       color: CFColors.primary.withValues(alpha: 0.10),
                       borderRadius: const BorderRadius.all(Radius.circular(16)),
                     ),
-                    child: const Icon(Icons.lock_outline, color: CFColors.primary),
+                    child: Icon(
+                      hasAccess ? Icons.verified_outlined : Icons.lock_outline,
+                      color: CFColors.primary,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Entrenamiento Premium',
+                      'Premium',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
-              _Line(text: 'Plan personalizado semanal'),
-              _Line(text: 'Progresión automática'),
+              _Line(text: 'Plan personalizado automático'),
+              _Line(text: 'Progresión inteligente'),
               _Line(text: 'Ajuste según rendimiento'),
               _Line(text: 'Estadísticas avanzadas'),
               _Line(text: 'Rutinas desbloqueadas'),
@@ -48,25 +55,30 @@ class TrainingPremiumCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: null,
-                  child: const Text('Desbloquear (próximamente)'),
+                  onPressed: hasAccess
+                      ? null
+                      : () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Premium estará disponible próximamente.',
+                              ),
+                            ),
+                          );
+                        },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CFColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(
+                    hasAccess ? 'Premium activo' : 'Desbloquear Premium',
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        Positioned.fill(
-          child: ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(20)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: Container(
-                color: Colors.white.withValues(alpha: 0.04),
-              ),
-            ),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -82,9 +94,15 @@ class _Line extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          const Icon(Icons.check_circle_outline, size: 18, color: CFColors.primary),
+          const Icon(
+            Icons.check_circle_outline,
+            size: 18,
+            color: CFColors.primary,
+          ),
           const SizedBox(width: 10),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
+          Expanded(
+            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+          ),
         ],
       ),
     );

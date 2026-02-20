@@ -57,9 +57,9 @@ class DietTemplateCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _MacroChip(label: 'Prote', value: '${template.macros.proteinPct}%'),
-              _MacroChip(label: 'Carbs', value: '${template.macros.carbsPct}%'),
-              _MacroChip(label: 'Grasa', value: '${template.macros.fatPct}%'),
+              _MacroChip(label: 'Proteína', value: '${template.macros.proteinPct}%'),
+              _MacroChip(label: 'Carbohidratos', value: '${template.macros.carbsPct}%'),
+              _MacroChip(label: 'Grasas', value: '${template.macros.fatPct}%'),
             ],
           ),
           const SizedBox(height: 14),

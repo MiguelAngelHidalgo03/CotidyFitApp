@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Necesitamos acceder a tus pasos para mostrar tu actividad diaria.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Necesitamos permiso para escribir datos de salud si activas la sincronización.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

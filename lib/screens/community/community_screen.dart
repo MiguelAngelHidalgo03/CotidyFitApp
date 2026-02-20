@@ -14,7 +14,7 @@ class CommunityScreen extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Comunidad'),
+          toolbarHeight: 0,
           bottom: TabBar(
             labelColor: CFColors.primary,
             unselectedLabelColor: CFColors.textSecondary,

@@ -13,10 +13,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: NutritionScreen()));
     await tester.pump(const Duration(milliseconds: 800));
 
-    expect(find.text('Nutrición'), findsWidgets);
     expect(find.widgetWithText(Tab, 'Plantillas'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Explorar recetas'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Favoritas'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Recetas favoritas'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Mi día'), findsOneWidget);
 
     // Default tab is now "Plantillas"; switch to Explore.

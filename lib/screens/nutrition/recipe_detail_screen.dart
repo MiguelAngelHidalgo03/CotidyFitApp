@@ -58,7 +58,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     if (!mounted) return;
     setState(() => _isFavorite = nowFav);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(nowFav ? 'Añadida a Favoritas' : 'Quitada de Favoritas')),
+      SnackBar(
+        content: Text(nowFav ? 'Añadida a Favoritas' : 'Quitada de Favoritas'),
+      ),
     );
   }
 
@@ -78,7 +80,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(value.toStringAsFixed(1), style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    value.toStringAsFixed(1),
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   Slider(
                     value: value,
                     min: 1,
@@ -91,8 +96,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             },
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Guardar')),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Guardar'),
+            ),
           ],
         );
       },
@@ -103,7 +114,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     await _ratings.setMyRating(r.id, value);
     if (!mounted) return;
     setState(() => _myRating = value);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Puntuación guardada (local).')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Puntuación guardada (local).')),
+    );
   }
 
   Future<void> _addToMyDay() async {
@@ -130,19 +143,34 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Añadir a Mi día', style: Theme.of(context).textTheme.titleLarge),
+                      Text(
+                        'Añadir a Mi día',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          const Icon(Icons.calendar_today_outlined, color: CFColors.primary),
+                          const Icon(
+                            Icons.calendar_today_outlined,
+                            color: CFColors.primary,
+                          ),
                           const SizedBox(width: 10),
-                          Expanded(child: Text(dateKeyFromDate(day), style: Theme.of(context).textTheme.bodyLarge)),
+                          Expanded(
+                            child: Text(
+                              dateKeyFromDate(day),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                          ),
                           TextButton(
                             onPressed: () async {
                               final picked = await showDatePicker(
                                 context: context,
-                                firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                                firstDate: DateTime.now().subtract(
+                                  const Duration(days: 365),
+                                ),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 365),
+                                ),
                                 initialDate: day,
                               );
                               if (picked == null) return;
@@ -154,7 +182,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<MealType>(
-                        value: meal,
+                        key: ValueKey(meal),
+                        initialValue: meal,
                         items: [
                           for (final m in MealType.values)
                             DropdownMenuItem(value: m, child: Text(m.label)),
@@ -163,7 +192,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                           if (v == null) return;
                           setLocal(() => meal = v);
                         },
-                        decoration: const InputDecoration(labelText: 'Tipo de comida'),
+                        decoration: const InputDecoration(
+                          labelText: 'Tipo de comida',
+                        ),
                       ),
                       const SizedBox(height: 14),
                       SizedBox(
@@ -188,20 +219,26 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
     await _myDay.add(day: day, mealType: meal, recipeId: r.id);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Añadida a Mi día (local).')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Añadida a Mi día (local).')));
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: SafeArea(child: Center(child: CircularProgressIndicator())));
+      return const Scaffold(
+        body: SafeArea(child: Center(child: CircularProgressIndicator())),
+      );
     }
 
     final r = _recipe;
     if (r == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Receta')),
-        body: const SafeArea(child: Center(child: Text('Receta no encontrada.'))),
+        body: const SafeArea(
+          child: Center(child: Text('Receta no encontrada.')),
+        ),
       );
     }
 
@@ -212,7 +249,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           IconButton(
             tooltip: 'Favorito',
             onPressed: _toggleFavorite,
-            icon: Icon(_isFavorite ? Icons.favorite : Icons.favorite_border, color: CFColors.primary),
+            icon: Icon(
+              _isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: CFColors.primary,
+            ),
           ),
           IconButton(
             tooltip: 'Puntuar',
@@ -235,7 +275,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   border: Border.all(color: CFColors.softGray),
                 ),
                 child: const Center(
-                  child: Icon(Icons.restaurant_menu, size: 60, color: CFColors.primary),
+                  child: Icon(
+                    Icons.restaurant_menu,
+                    size: 60,
+                    color: CFColors.primary,
+                  ),
                 ),
               ),
             ),
@@ -247,17 +291,33 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(r.name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                        child: Text(
+                          r.name,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: CFColors.primary.withValues(alpha: 0.12),
-                          borderRadius: const BorderRadius.all(Radius.circular(999)),
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(999),
+                          ),
                           border: Border.all(color: CFColors.primary),
                         ),
-                        child: Text(r.country, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: CFColors.primary, fontWeight: FontWeight.w900)),
-                      )
+                        child: Text(
+                          r.country,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: CFColors.primary,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -265,28 +325,67 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     spacing: 10,
                     runSpacing: 10,
                     children: [
-                      _statChip(icon: Icons.star, label: '${r.ratingAvg.toStringAsFixed(1)} (${r.ratingCount})'),
-                      _statChip(icon: Icons.favorite, label: '${r.likes} likes'),
-                      _statChip(icon: Icons.local_fire_department_outlined, label: '${r.kcalPerServing} kcal/ración'),
-                      _statChip(icon: Icons.local_fire_department, label: '${r.kcalPer100g} kcal/100g'),
-                      _statChip(icon: Icons.schedule, label: '${r.durationMinutes} min'),
+                      _statChip(
+                        icon: Icons.star,
+                        label:
+                            '${r.ratingAvg.toStringAsFixed(1)} (${r.ratingCount})',
+                      ),
+                      _statChip(
+                        icon: Icons.favorite,
+                        label: '${r.likes} likes',
+                      ),
+                      _statChip(
+                        icon: Icons.local_fire_department_outlined,
+                        label: '${r.kcalPerServing} kcal/ración',
+                      ),
+                      _statChip(
+                        icon: Icons.local_fire_department,
+                        label: '${r.kcalPer100g} kcal/100g',
+                      ),
+                      _statChip(
+                        icon: Icons.schedule,
+                        label: '${r.durationMinutes} min',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text('Macronutrientes (por ración)', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900)),
+                  Text(
+                    'Macronutrientes (por ración)',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Expanded(child: _macroTile(title: 'Proteína', value: '${r.macrosPerServing.proteinG} g')),
+                      Expanded(
+                        child: _macroTile(
+                          title: 'Proteína',
+                          value: '${r.macrosPerServing.proteinG} g',
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Expanded(child: _macroTile(title: 'Carbs', value: '${r.macrosPerServing.carbsG} g')),
+                      Expanded(
+                        child: _macroTile(
+                          title: 'Carbs',
+                          value: '${r.macrosPerServing.carbsG} g',
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Expanded(child: _macroTile(title: 'Grasa', value: '${r.macrosPerServing.fatG} g')),
+                      Expanded(
+                        child: _macroTile(
+                          title: 'Grasa',
+                          value: '${r.macrosPerServing.fatG} g',
+                        ),
+                      ),
                     ],
                   ),
                   if (_myRating != null) ...[
                     const SizedBox(height: 10),
-                    Text('Tu puntuación: ${_myRating!.toStringAsFixed(1)}', style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      'Tu puntuación: ${_myRating!.toStringAsFixed(1)}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ],
                   const SizedBox(height: 14),
                   SizedBox(
@@ -305,7 +404,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Ingredientes', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Ingredientes',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 8),
                   for (var i = 0; i < r.ingredients.length; i++) ...[
                     CheckboxListTile(
@@ -320,7 +422,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                         });
                       },
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: Text(r.ingredients[i].display, style: Theme.of(context).textTheme.bodyLarge),
+                      title: Text(
+                        r.ingredients[i].display,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ],
@@ -339,7 +444,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     if (i != r.steps.length - 1) const SizedBox(height: 10),
                   ],
                   const SizedBox(height: 6),
-                  Text('Vídeo: próximamente', style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    'Vídeo: próximamente',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
@@ -362,7 +470,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         children: [
           Icon(icon, size: 16, color: CFColors.primary),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(color: CFColors.textSecondary, fontWeight: FontWeight.w800)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: CFColors.textSecondary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );
@@ -379,9 +493,21 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(color: CFColors.textSecondary, fontWeight: FontWeight.w800)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: CFColors.textSecondary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(color: CFColors.textPrimary, fontWeight: FontWeight.w900)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: CFColors.textPrimary,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -402,13 +528,23 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           child: Center(
             child: Text(
               '$index',
-              style: const TextStyle(color: CFColors.primary, fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                color: CFColors.primary,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(text, style: const TextStyle(color: CFColors.textPrimary, height: 1.3, fontWeight: FontWeight.w600)),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: CFColors.textPrimary,
+              height: 1.3,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     );

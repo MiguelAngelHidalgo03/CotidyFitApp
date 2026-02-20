@@ -40,7 +40,7 @@ class CommunityAvatar extends StatelessWidget {
           decoration: BoxDecoration(
             color: bg,
             shape: BoxShape.circle,
-            border: Border.all(color: CFColors.softGray),
+            border: Border.all(color: CFColors.primary.withValues(alpha: 0.18)),
           ),
           alignment: Alignment.center,
           child: Text(

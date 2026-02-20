@@ -45,6 +45,19 @@ dependencies:
   timezone: ^0.10.0
   flutter_timezone: ^4.1.0
 
+  url_launcher: ^6.3.1
+
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.6.2
+  cloud_firestore: ^5.6.10
+  google_sign_in: ^6.3.0
+  firebase_messaging: ^15.2.1
+  cloud_functions: ^5.0.0
+
+  diacritic: ^0.1.6
+
+  health: ^12.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

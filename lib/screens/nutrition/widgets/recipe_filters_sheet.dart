@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme.dart';
 import '../../../models/recipe_filters.dart';
+import '../../../models/price_tier.dart';
 import '../../../models/recipe_model.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 
@@ -37,6 +38,8 @@ class _RecipeFiltersSheetState extends State<RecipeFiltersSheet> {
       _filters = _filters.copyWith(mealTypes: next.cast<MealType>());
     } else if (T == RecipeGoal) {
       _filters = _filters.copyWith(goals: next.cast<RecipeGoal>());
+    } else if (T == PriceTier) {
+      _filters = _filters.copyWith(priceTiers: next.cast<PriceTier>());
     } else if (T == DifficultyLevel) {
       _filters = _filters.copyWith(difficulties: next.cast<DifficultyLevel>());
     }
@@ -125,6 +128,16 @@ class _RecipeFiltersSheetState extends State<RecipeFiltersSheet> {
                       label: v.label,
                       selected: _filters.goals.contains(v),
                       onTap: () => _toggleEnum<RecipeGoal>(v, _filters.goals),
+                    ),
+                ]),
+
+                _SectionTitle('Precio'),
+                _wrap([
+                  for (final v in PriceTier.values)
+                    _FilterPill(
+                      label: v.label,
+                      selected: _filters.priceTiers.contains(v),
+                      onTap: () => _toggleEnum<PriceTier>(v, _filters.priceTiers),
                     ),
                 ]),
 

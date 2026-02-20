@@ -11,11 +11,13 @@ class ChatListTile extends StatelessWidget {
     required this.chat,
     required this.onTap,
     required this.isProfessionalLocked,
+    this.avatarSize = 52,
   });
 
   final ChatModel chat;
   final VoidCallback onTap;
   final bool isProfessionalLocked;
+  final double avatarSize;
 
   String _preview(MessageModel? m) {
     if (m == null) return 'Sin mensajes';
@@ -32,9 +34,18 @@ class ChatListTile extends StatelessWidget {
 
   String _timeLabel(int ms) {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
-    final hh = dt.hour.toString().padLeft(2, '0');
-    final mm = dt.minute.toString().padLeft(2, '0');
-    return '$hh:$mm';
+    final now = DateTime.now();
+
+    final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    if (sameDay) {
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    }
+
+    final dd = dt.day.toString().padLeft(2, '0');
+    final mm = dt.month.toString().padLeft(2, '0');
+    return '$dd/$mm';
   }
 
   @override
@@ -45,13 +56,15 @@ class ChatListTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: const BorderRadius.all(Radius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             CommunityAvatar(
               keySeed: chat.avatarKey,
               label: chat.title,
               isLocked: isProfessionalLocked,
+              size: avatarSize,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -59,6 +72,7 @@ class ChatListTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
                         child: Text(
@@ -75,24 +89,25 @@ class ChatListTile extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
                         child: Text(
                           _preview(last),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      if (chat.unreadCount > 0)
+                      if (chat.unreadCount > 0) ...[
+                        const SizedBox(width: 10),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: CFColors.primary,
-                            borderRadius: const BorderRadius.all(Radius.circular(999)),
+                            borderRadius: BorderRadius.all(Radius.circular(999)),
                           ),
                           child: Text(
                             chat.unreadCount > 99 ? '99+' : '${chat.unreadCount}',
@@ -102,6 +117,7 @@ class ChatListTile extends StatelessWidget {
                                 ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ],

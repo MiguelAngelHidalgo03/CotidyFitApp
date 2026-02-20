@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../core/daily_checkin_controller.dart';
-import '../services/local_storage_service.dart';
+import '../core/daily_data_controller.dart';
+import '../core/home_navigation.dart';
+import 'achievements_screen.dart';
 import '../widgets/home/daily_actions_section.dart';
 import '../widgets/home/home_extras_section.dart';
 import '../widgets/home/home_header.dart';
@@ -14,12 +15,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final DailyCheckInController _controller;
+  late final DailyDataController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = DailyCheckInController(storage: LocalStorageService());
+    _controller = DailyDataController();
     _controller.init();
   }
 
@@ -49,14 +50,50 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 16),
                         DailyActionsSection(
-                          actions: DailyCheckInController.actions,
-                          selected: _controller.selectedActions,
+                          data: _controller.todayData,
+                          workoutCompleted: _controller.workoutCompleted,
+                          mealsLoggedCount: _controller.mealsLoggedCount,
+                          completedCount: _controller.completedCount,
+                          totalCount: _controller.totalCount,
                           completedToday: _controller.completedToday,
-                          onToggle: _controller.toggleAction,
+                          onGoToNutrition: () => HomeNavigation.maybeOf(context)?.goToTab(0),
+                          onGoToTraining: () => HomeNavigation.maybeOf(context)?.goToTab(3),
+                          onSetSteps: _controller.setSteps,
+                          onSetActiveMinutes: _controller.setActiveMinutes,
+                          onSetWaterLiters: _controller.setWaterLiters,
+                          onToggleStretches: _controller.toggleStretchesDone,
                           onConfirm: _controller.confirmToday,
                         ),
                         const SizedBox(height: 18),
-                        const HomeExtrasSection(),
+                        HomeExtrasSection(
+                          data: _controller.todayData,
+                          completedToday: _controller.completedToday,
+                          onSetEnergy: _controller.setEnergy,
+                          onSetMood: _controller.setMood,
+                          onSetStress: _controller.setStress,
+                          onSetSleep: _controller.setSleep,
+                          quickSteps: _controller.todayData.steps,
+                          quickWaterLiters: _controller.todayData.waterLiters,
+                          quickMealsLoggedCount: _controller.mealsLoggedCount,
+                          quickActiveMinutes: _controller.todayData.activeMinutes,
+                          onEditSteps: _controller.setSteps,
+                          onAddWater250ml: _controller.addWater250ml,
+                          onEditWaterLiters: _controller.setWaterLiters,
+                          onEditActiveMinutes: _controller.setActiveMinutes,
+                          onGoToAchievements: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AchievementsScreen(
+                                  streakCount: _controller.streakCount,
+                                  bestCf: _controller.displayedCfIndex,
+                                  workoutCompleted: _controller.workoutCompleted,
+                                  mealsLoggedCount: _controller.mealsLoggedCount,
+                                  todayData: _controller.todayData,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                         const SizedBox(height: 22),
                       ],
                     ),

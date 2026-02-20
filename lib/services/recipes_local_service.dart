@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/price_tier.dart';
 import '../models/recipe_model.dart';
 import 'recipe_repository.dart';
 
@@ -43,6 +44,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_overnight_oats',
         name: 'Overnight oats proteicos',
         country: 'EE.UU.',
+        priceTier: PriceTier.economical,
         ratingAvg: 4.6,
         ratingCount: 842,
         likes: 12140,
@@ -56,7 +58,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.breakfast, MealType.snack],
         goals: [RecipeGoal.highProtein, RecipeGoal.quickEnergy, RecipeGoal.filling],
         difficulty: DifficultyLevel.easy,
-        utensils: ['Bol', 'Cuchara'],
+        utensils: ['Microondas'],
         ingredients: [
           RecipeIngredient(name: 'Avena', amount: 60, unit: 'g'),
           RecipeIngredient(name: 'Yogur griego', amount: 200, unit: 'g'),
@@ -76,6 +78,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_tofu_stir_fry',
         name: 'Salteado vegano de tofu',
         country: 'China',
+        priceTier: PriceTier.economical,
         ratingAvg: 4.4,
         ratingCount: 1250,
         likes: 9830,
@@ -89,7 +92,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.lunch, MealType.dinner],
         goals: [RecipeGoal.filling, RecipeGoal.weightLoss],
         difficulty: DifficultyLevel.medium,
-        utensils: ['Sartén', 'Cuchillo'],
+        utensils: ['Sartén'],
         ingredients: [
           RecipeIngredient(name: 'Tofu firme', amount: 250, unit: 'g'),
           RecipeIngredient(name: 'Brócoli', amount: 150, unit: 'g'),
@@ -109,6 +112,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_salmon_bowl',
         name: 'Bowl pescetariano de salmón',
         country: 'Noruega',
+        priceTier: PriceTier.high,
         ratingAvg: 4.7,
         ratingCount: 2101,
         likes: 16890,
@@ -122,7 +126,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.lunch, MealType.dinner],
         goals: [RecipeGoal.muscleGain, RecipeGoal.highProtein],
         difficulty: DifficultyLevel.easy,
-        utensils: ['Sartén', 'Bol'],
+        utensils: ['Parrilla', 'Olla'],
         ingredients: [
           RecipeIngredient(name: 'Salmón', amount: 160, unit: 'g'),
           RecipeIngredient(name: 'Arroz cocido', amount: 180, unit: 'g'),
@@ -141,6 +145,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_chicken_wrap',
         name: 'Wrap alto en proteína',
         country: 'España',
+        priceTier: PriceTier.medium,
         ratingAvg: 4.5,
         ratingCount: 650,
         likes: 7620,
@@ -154,7 +159,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.lunch, MealType.dinner, MealType.bite],
         goals: [RecipeGoal.highProtein, RecipeGoal.quickEnergy],
         difficulty: DifficultyLevel.easy,
-        utensils: ['Sartén', 'Cuchillo'],
+        utensils: ['Airfryer'],
         ingredients: [
           RecipeIngredient(name: 'Tortilla de trigo', amount: 1, unit: 'ud'),
           RecipeIngredient(name: 'Pollo cocido', amount: 160, unit: 'g'),
@@ -173,6 +178,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_shakshuka',
         name: 'Shakshuka (huevos con tomate)',
         country: 'Marruecos',
+        priceTier: PriceTier.economical,
         ratingAvg: 4.3,
         ratingCount: 930,
         likes: 5310,
@@ -186,7 +192,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.breakfast, MealType.lunch, MealType.dinner],
         goals: [RecipeGoal.filling, RecipeGoal.weightLoss],
         difficulty: DifficultyLevel.medium,
-        utensils: ['Sartén'],
+        utensils: ['Horno'],
         ingredients: [
           RecipeIngredient(name: 'Tomate triturado', amount: 400, unit: 'g'),
           RecipeIngredient(name: 'Huevos', amount: 4, unit: 'ud'),
@@ -204,6 +210,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_greek_salad',
         name: 'Ensalada griega saciante',
         country: 'Grecia',
+        priceTier: PriceTier.medium,
         ratingAvg: 4.2,
         ratingCount: 410,
         likes: 4020,
@@ -217,7 +224,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.lunch, MealType.dinner, MealType.starter],
         goals: [RecipeGoal.weightLoss, RecipeGoal.filling],
         difficulty: DifficultyLevel.easy,
-        utensils: ['Bol', 'Cuchillo'],
+        utensils: [],
         ingredients: [
           RecipeIngredient(name: 'Pepino', amount: 1, unit: 'ud'),
           RecipeIngredient(name: 'Tomate', amount: 2, unit: 'ud'),
@@ -234,6 +241,7 @@ class RecipesLocalService implements RecipeRepository {
         id: 'r_banana_pancakes',
         name: 'Pancakes de plátano sin gluten',
         country: 'Argentina',
+        priceTier: PriceTier.economical,
         ratingAvg: 4.1,
         ratingCount: 300,
         likes: 2850,
@@ -247,7 +255,7 @@ class RecipesLocalService implements RecipeRepository {
         mealTypes: [MealType.breakfast, MealType.dessert],
         goals: [RecipeGoal.quickEnergy],
         difficulty: DifficultyLevel.easy,
-        utensils: ['Sartén', 'Bol'],
+        utensils: ['Trituradora/Batidora', 'Sartén'],
         ingredients: [
           RecipeIngredient(name: 'Plátano', amount: 1, unit: 'ud'),
           RecipeIngredient(name: 'Huevos', amount: 2, unit: 'ud'),

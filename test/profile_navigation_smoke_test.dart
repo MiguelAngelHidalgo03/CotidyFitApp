@@ -16,24 +16,22 @@ void main() {
     // Allow async loads.
     await tester.pump(const Duration(milliseconds: 1000));
 
-    expect(find.text('Progreso'), findsWidgets);
-    expect(find.widgetWithIcon(IconButton, Icons.person_outline), findsOneWidget);
+    expect(find.widgetWithIcon(IconButton, Icons.settings_outlined), findsOneWidget);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.person_outline));
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.settings_outlined));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('Perfil'), findsWidgets);
-    expect(find.text('Información personal'), findsOneWidget);
+    expect(find.text('Perfil deportivo'), findsOneWidget);
 
     // The screen is a ListView; scroll to build lower sections.
     await tester.scrollUntilVisible(
-      find.text('Test personal'),
+      find.text('Política de privacidad'),
       250,
       scrollable: find.byType(Scrollable).first,
       maxScrolls: 20,
     );
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('Test personal'), findsOneWidget);
+    expect(find.text('Política de privacidad'), findsOneWidget);
   });
 }

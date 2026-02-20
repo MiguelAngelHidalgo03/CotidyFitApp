@@ -43,7 +43,9 @@ class _FavoritesRecipesTabState extends State<FavoritesRecipesTab> {
   }
 
   Future<void> _open(RecipeModel r) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipeId: r.id)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipeId: r.id)),
+    );
     await _load();
   }
 
@@ -60,7 +62,10 @@ class _FavoritesRecipesTabState extends State<FavoritesRecipesTab> {
             children: [
               Text('Favoritas', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text('Guarda recetas para verlas aquí.', style: Theme.of(context).textTheme.bodyMedium),
+              Text(
+                'Guarda recetas para verlas aquí.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ],
           ),
         ),
@@ -72,7 +77,7 @@ class _FavoritesRecipesTabState extends State<FavoritesRecipesTab> {
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final r = _items[index];
           return RecipeCard(recipe: r, onTap: () => _open(r));

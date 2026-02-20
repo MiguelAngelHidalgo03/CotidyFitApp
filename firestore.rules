@@ -1,0 +1,205 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function _pairContainsUid(pairId, uid) {
+      // pairId is built as "uidA_uidB" (sorted). This is used to allow `get()` even
+      // when the document doesn't exist yet (resource.data would be null).
+      return pairId is string
+        && uid is string
+        && pairId.split('_').size() == 2
+        && (pairId.split('_')[0] == uid || pairId.split('_')[1] == uid);
+    }
+    function _blockedBy(blocker, target) {
+      let ref = /databases/$(database)/documents/user_blocks/$(blocker);
+      return blocker is string
+        && target is string
+        && blocker.size() > 0
+        && target.size() > 0
+        && (
+          exists(ref)
+          && (get(ref).data.blockedUsers is list)
+          && get(ref).data.blockedUsers.hasAny([target])
+        );
+    }
+
+    function _eitherBlocked(a, b) {
+      return _blockedBy(a, b) || _blockedBy(b, a);
+    }
+
+    match /reports/{reportId} {
+      allow create: if request.auth != null
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.reportedUserId is string
+        && request.resource.data.reason is string;
+
+      allow read, update, delete: if false;
+    }
+
+    match /mutedChats/{docId} {
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.chatId is string;
+
+      allow read, update, delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+    }
+    match /user_tags/{tagId} {
+      allow get: if request.auth != null;
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/user_tags/$(tagId));
+
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Public-ish blocklist used only for rules evaluation.
+    // Contains ONLY blockedUsers and timestamps. Readable by any authenticated user.
+    match /user_blocks/{uid} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Public Community profile (no sensitive data)
+    match /user_public/{uid} {
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || resource.data.visible != false);
+
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    // Friend requests: one doc per pairId
+    match /friend_requests/{pairId} {
+      // IMPORTANT: Keep list() queryable. Using documentId-based checks in an OR
+      // can cause queries to be rejected. We only use pairId-based checks for get().
+      allow get: if request.auth != null && (
+        (resource.data.uids is list && request.auth.uid in resource.data.uids)
+        || _pairContainsUid(pairId, request.auth.uid)
+      );
+
+      // Keep list() queryable for: where('uids', arrayContains: request.auth.uid)
+      // Do not add extra predicates here that the query cannot guarantee.
+      allow list: if request.auth != null
+        && (request.auth.uid in resource.data.uids);
+
+      allow create: if request.auth != null
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.uids.size() == 2
+        && request.resource.data.status == 'pending'
+        && !_eitherBlocked(request.resource.data.uids[0], request.resource.data.uids[1])
+        && !exists(/databases/$(database)/documents/friend_requests/$(pairId));
+
+      allow update: if request.auth != null
+        && request.auth.uid in resource.data.uids
+        && request.resource.data.uids == resource.data.uids;
+
+      allow delete: if request.auth != null
+        && (
+          // Normal path
+          (resource.data.uids is list && request.auth.uid in resource.data.uids)
+          // Back-compat / recovery if a legacy doc was malformed
+          || request.auth.uid == resource.data.requesterUid
+          || request.auth.uid == resource.data.addresseeUid
+        );
+    }
+
+    // Friendships: one doc per pairId
+    match /friendships/{pairId} {
+      allow get: if request.auth != null && (
+        (resource.data.uids is list && request.auth.uid in resource.data.uids)
+        || _pairContainsUid(pairId, request.auth.uid)
+      );
+
+      // Keep list() queryable for: where('uids', arrayContains: request.auth.uid)
+      allow list: if request.auth != null
+        && (request.auth.uid in resource.data.uids);
+
+      allow create: if request.auth != null
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.uids.size() == 2
+        && !_eitherBlocked(request.resource.data.uids[0], request.resource.data.uids[1])
+        && !exists(/databases/$(database)/documents/friendships/$(pairId));
+
+      allow update: if false;
+      allow delete: if request.auth != null && request.auth.uid in resource.data.uids;
+    }
+
+    // Chats (DM uses pairId) + messages
+    match /chats/{chatId} {
+      allow get: if request.auth != null && (
+        (
+          (resource.data.members is list)
+          && (request.auth.uid in resource.data.members)
+          && (resource.data.members.size() == 2)
+          && !_eitherBlocked(resource.data.members[0], resource.data.members[1])
+        )
+        // Allow `get()` to return not-found (instead of permission-denied) for participants
+        // even when the chat document doesn't exist yet.
+        || _pairContainsUid(chatId, request.auth.uid)
+      );
+
+      // Keep list() queryable for: where('members', arrayContains: request.auth.uid)
+      // Avoid additional predicates that the query can't guarantee.
+      allow list: if request.auth != null
+        && (request.auth.uid in resource.data.members);
+
+      allow create: if request.auth != null
+        && (request.resource.data.members is list)
+        && (request.resource.data.members.size() == 2)
+        && (request.auth.uid in request.resource.data.members)
+        && !_eitherBlocked(request.resource.data.members[0], request.resource.data.members[1])
+        && !exists(/databases/$(database)/documents/chats/$(chatId));
+
+      allow update: if request.auth != null
+        && (resource.data.members is list)
+        && (request.auth.uid in resource.data.members)
+        && (resource.data.members.size() == 2)
+        && (request.resource.data.members == resource.data.members)
+        && !_eitherBlocked(resource.data.members[0], resource.data.members[1]);
+
+      allow delete: if request.auth != null
+        && (resource.data.members is list)
+        && (request.auth.uid in resource.data.members);
+
+      match /messages/{messageId} {
+        allow read: if request.auth != null
+          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
+          && !_eitherBlocked(
+            get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
+            get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
+          );
+
+        allow create: if request.auth != null
+          && request.resource.data.senderUid == request.auth.uid
+          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
+          && !_eitherBlocked(
+            get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
+            get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
+          )
+          && exists(/databases/$(database)/documents/friendships/$(chatId));
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
