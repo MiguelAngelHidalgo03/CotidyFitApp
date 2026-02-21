@@ -57,9 +57,13 @@ class _CommunityChatsTabState extends State<CommunityChatsTab>
   }
 
   Future<void> _openDmChat(String chatId) async {
-    await Navigator.of(
+    final res = await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => ChatScreen.dm(chatId: chatId)));
+    if (!mounted) return;
+    if (res == 'go_chats_tab') {
+      DefaultTabController.of(context).animateTo(0);
+    }
   }
 
   @override
@@ -108,7 +112,13 @@ class _CommunityChatsTabState extends State<CommunityChatsTab>
             );
           }
 
-          final chats = snapshot.data ?? const <ChatModel>[];
+          final chatsRaw = snapshot.data ?? const <ChatModel>[];
+          final chats = <ChatModel>[];
+          for (final c in chatsRaw) {
+            // Local delete: hide the conversation for current user.
+            if (c.hiddenForMe) continue;
+            chats.add(c);
+          }
           if (chats.isEmpty) {
             return Padding(
               padding: const EdgeInsets.all(20),

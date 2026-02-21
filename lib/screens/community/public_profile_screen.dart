@@ -27,7 +27,11 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<bool> _confirm({required String title, required String message, required String confirmLabel}) async {
+  Future<bool> _confirm({
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) async {
     final res = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -87,10 +91,16 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     final ref = FirebaseFirestore.instance.collection('user_public').doc(uid);
     final me = FirebaseAuth.instance.currentUser?.uid;
     final isMe = me != null && me == uid;
-    final pairId = me == null ? null : SocialFirestoreService.pairIdFor(me, uid);
+    final pairId = me == null
+        ? null
+        : SocialFirestoreService.pairIdFor(me, uid);
 
-    final friendshipRef = pairId == null ? null : FirebaseFirestore.instance.collection('friendships').doc(pairId);
-    final requestRef = pairId == null ? null : FirebaseFirestore.instance.collection('friend_requests').doc(pairId);
+    final friendshipRef = pairId == null
+        ? null
+        : FirebaseFirestore.instance.collection('friendships').doc(pairId);
+    final requestRef = pairId == null
+        ? null
+        : FirebaseFirestore.instance.collection('friend_requests').doc(pairId);
 
     Widget privateCard() {
       return Padding(
@@ -151,10 +161,18 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                 '';
 
             // Optional stats (best-effort, avoid crashes if fields don't exist).
-            final maxStreak = _readInt(data['maxStreak'] ?? data['maxStreakDays']);
-            final activeDays = _readInt(data['activeDays'] ?? data['daysActive']);
-            final workouts = _readInt(data['workouts'] ?? data['workoutsCount']);
-            final nutritionPct = _readDouble(data['nutritionCompliancePct'] ?? data['nutritionCompletedPct']);
+            final maxStreak = _readInt(
+              data['maxStreak'] ?? data['maxStreakDays'],
+            );
+            final activeDays = _readInt(
+              data['activeDays'] ?? data['daysActive'],
+            );
+            final workouts = _readInt(
+              data['workouts'] ?? data['workoutsCount'],
+            );
+            final nutritionPct = _readDouble(
+              data['nutritionCompliancePct'] ?? data['nutritionCompletedPct'],
+            );
 
             Widget statItem(String label, String value) {
               return Expanded(
@@ -163,13 +181,17 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                   children: [
                     Text(
                       value,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       label,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: CFColors.textSecondary),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: CFColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -178,7 +200,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
 
             Widget header() {
               final name = displayName.isEmpty ? 'Usuario' : displayName;
-              final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
+              final initial = name.trim().isEmpty
+                  ? '?'
+                  : name.trim()[0].toUpperCase();
 
               return ProgressSectionCard(
                 child: Column(
@@ -189,10 +213,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                       children: [
                         CircleAvatar(
                           radius: 40,
-                          backgroundColor: CFColors.primary.withValues(alpha: 0.14),
+                          backgroundColor: CFColors.primary.withValues(
+                            alpha: 0.14,
+                          ),
                           child: Text(
                             initial,
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
                                   fontWeight: FontWeight.w900,
                                   color: CFColors.primary,
                                 ),
@@ -205,12 +232,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                             children: [
                               Text(
                                 name,
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w900),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 uniqueTag.isEmpty ? '—' : uniqueTag,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: CFColors.textSecondary),
                               ),
                             ],
                           ),
@@ -225,7 +254,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                             child: FilledButton(
                               onPressed: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                                  MaterialPageRoute(
+                                    builder: (_) => const ProfileScreen(),
+                                  ),
                                 );
                               },
                               child: const Text('Editar perfil'),
@@ -239,30 +270,46 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                               child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                                 stream: friendshipRef?.snapshots(),
                                 builder: (context, friendshipSnap) {
-                                  final isFriend = friendshipSnap.data?.exists ?? false;
-                                  return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                  final isFriend =
+                                      friendshipSnap.data?.exists ?? false;
+                                  return StreamBuilder<
+                                    DocumentSnapshot<Map<String, dynamic>>
+                                  >(
                                     stream: requestRef?.snapshots(),
                                     builder: (context, reqSnap) {
-                                      final reqExists = reqSnap.data?.exists ?? false;
-                                      final status = (reqSnap.data?.data()?['status'] as String?)?.trim() ?? 'pending';
-                                      final pending = reqExists && status == 'pending';
+                                      final reqExists =
+                                          reqSnap.data?.exists ?? false;
+                                      final status =
+                                          (reqSnap.data?.data()?['status']
+                                                  as String?)
+                                              ?.trim() ??
+                                          'pending';
+                                      final pending =
+                                          reqExists && status == 'pending';
 
                                       if (isFriend) {
                                         return FilledButton(
                                           onPressed: () async {
                                             final ok = await _confirm(
                                               title: 'Quitar amigo',
-                                              message: '¿Quieres quitar a "$name" de tus amigos? También se eliminará el chat.',
+                                              message:
+                                                  '¿Quieres quitar a "$name" de tus amigos? También se eliminará el chat.',
                                               confirmLabel: 'Quitar',
                                             );
                                             if (!ok) return;
                                             try {
-                                              await _friends.removeFriendshipAndChat(myUid: me, friendUid: uid);
+                                              await _friends
+                                                  .removeFriendshipAndChat(
+                                                    myUid: me,
+                                                    friendUid: uid,
+                                                  );
                                               if (!mounted) return;
                                               _snack('Amigo eliminado');
                                             } catch (_) {
                                               if (!mounted) return;
-                                              _snack('No se pudo quitar al amigo');
+                                              _snack(
+                                                'No se pudo quitar al amigo',
+                                              );
                                             }
                                           },
                                           child: const Text('Quitar amigo'),
@@ -272,7 +319,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                                       if (pending) {
                                         return FilledButton(
                                           onPressed: null,
-                                          child: const Text('Solicitud enviada'),
+                                          child: const Text(
+                                            'Solicitud enviada',
+                                          ),
                                         );
                                       }
 
@@ -280,10 +329,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                                         onPressed: () async {
                                           // If I blocked this user, rules will reject creating friend_requests.
                                           try {
-                                            final blocked = await _block.getBlockedUserIdsOnce();
+                                            final blocked = await _block
+                                                .getBlockedUserIdsOnce();
                                             if (blocked.contains(uid)) {
                                               if (!mounted) return;
-                                              _snack('Has bloqueado a este usuario. Desbloquéalo para enviar solicitud.');
+                                              _snack(
+                                                'Has bloqueado a este usuario. Desbloquéalo para enviar solicitud.',
+                                              );
                                               return;
                                             }
                                           } catch (_) {
@@ -291,23 +343,41 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                                           }
 
                                           try {
-                                            final res = await _friends.sendFriendRequestSafely(myUid: me, targetUid: uid);
+                                            final res = await _friends
+                                                .sendFriendRequestSafely(
+                                                  myUid: me,
+                                                  targetUid: uid,
+                                                );
                                             if (!mounted) return;
                                             final msg = switch (res) {
-                                              SendFriendRequestResult.created => 'Solicitud enviada',
-                                              SendFriendRequestResult.alreadyFriends => 'Ya sois amigos',
-                                              SendFriendRequestResult.alreadyPendingSent => 'Solicitud enviada',
-                                              SendFriendRequestResult.alreadyPendingReceived => 'Tienes una solicitud de esa persona',
-                                              SendFriendRequestResult.alreadyExists => 'Ya existe una relación previa',
+                                              SendFriendRequestResult.created =>
+                                                'Solicitud enviada',
+                                              SendFriendRequestResult
+                                                  .alreadyFriends =>
+                                                'Ya sois amigos',
+                                              SendFriendRequestResult
+                                                  .alreadyPendingSent =>
+                                                'Solicitud enviada',
+                                              SendFriendRequestResult
+                                                  .alreadyPendingReceived =>
+                                                'Tienes una solicitud de esa persona',
+                                              SendFriendRequestResult
+                                                  .alreadyExists =>
+                                                'Ya existe una relación previa',
                                             };
                                             _snack(msg);
                                           } catch (e) {
                                             if (!mounted) return;
-                                            final msg = switch (e) {
-                                              FirebaseException(code: final code) => 'No se pudo enviar la solicitud. ($code)',
-                                              _ => 'No se pudo enviar la solicitud',
-                                            };
-                                            _snack(msg);
+                                            if (e is FirebaseException &&
+                                                e.code == 'permission-denied') {
+                                              _snack(
+                                                'No se pudo enviar la solicitud.',
+                                              );
+                                            } else {
+                                              _snack(
+                                                'No se pudo enviar la solicitud.',
+                                              );
+                                            }
                                           }
                                         },
                                         child: const Text('Añadir amigo'),
@@ -328,7 +398,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                               final navigator = Navigator.of(context);
                               final ok = await _confirm(
                                 title: 'Bloquear usuario',
-                                message: '¿Bloquear a "$name"? No podrás escribirle ni recibir solicitudes.',
+                                message:
+                                    '¿Bloquear a "$name"? No podrás escribirle ni recibir solicitudes.',
                                 confirmLabel: 'Bloquear',
                               );
                               if (!ok) return;
@@ -377,9 +448,19 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const SizedBox(height: 8),
-                    Text(body, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary)),
+                    Text(
+                      body,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: CFColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               );

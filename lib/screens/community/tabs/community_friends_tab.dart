@@ -28,9 +28,13 @@ class _CommunityFriendsTabState extends State<CommunityFriendsTab>
     required String peerUid,
   }) async {
     final chatId = SocialFirestoreService.pairIdFor(myUid, peerUid);
-    await Navigator.of(
+    final res = await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => ChatScreen.dm(chatId: chatId)));
+    if (!mounted) return;
+    if (res == 'go_chats_tab') {
+      DefaultTabController.of(context).animateTo(0);
+    }
   }
 
   @override

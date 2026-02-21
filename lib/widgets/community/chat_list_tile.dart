@@ -101,7 +101,7 @@ class ChatListTile extends StatelessWidget {
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
                         ),
                       ),
-                      if (chat.unreadCount > 0) ...[
+                      if (!chat.hiddenForMe && chat.unreadCount > 0) ...[
                         const SizedBox(width: 10),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

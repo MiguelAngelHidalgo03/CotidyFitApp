@@ -211,12 +211,15 @@ class _CommunityContactsTabState extends State<CommunityContactsTab>
       }
     } catch (e) {
       if (!mounted) return;
-      final msg = switch (e) {
-        FirebaseException(code: final code) =>
-          'No se pudo enviar la solicitud. ($code)',
-        _ => 'No se pudo enviar la solicitud',
-      };
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (e is FirebaseException && e.code == 'permission-denied') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo enviar la solicitud.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo enviar la solicitud.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -227,9 +230,13 @@ class _CommunityContactsTabState extends State<CommunityContactsTab>
     required String peerUid,
   }) async {
     final chatId = SocialFirestoreService.pairIdFor(myUid, peerUid);
-    await Navigator.of(
+    final res = await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => ChatScreen.dm(chatId: chatId)));
+    if (!mounted) return;
+    if (res == 'go_chats_tab') {
+      DefaultTabController.of(context).animateTo(0);
+    }
   }
 
   Widget _coachSection({required bool isPremium}) {

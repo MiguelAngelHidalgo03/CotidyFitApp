@@ -10,6 +10,7 @@ type ChatDoc = {
   kind?: string;
   muteUntil?: FirebaseFirestore.Timestamp;
   muteUntilByUser?: Record<string, FirebaseFirestore.Timestamp>;
+  hiddenForUsers?: string[];
 };
 
 type MessageDoc = {
@@ -17,6 +18,7 @@ type MessageDoc = {
   senderName?: string;
   text?: string;
   type?: string;
+  clientHandledUnread?: boolean;
 };
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -124,7 +126,8 @@ export const onMessageCreated = functions.firestore
     const chatId = context.params.chatId as string;
     const message = snap.data() as MessageDoc;
 
-    const chatSnap = await admin.firestore().collection('chats').doc(chatId).get();
+    const chatRef = admin.firestore().collection('chats').doc(chatId);
+    const chatSnap = await chatRef.get();
     const chat = chatSnap.data() as ChatDoc | undefined;
 
     const members = (chat?.members ?? []).filter((m) => typeof m === 'string' && m.trim().length > 0);
@@ -134,6 +137,7 @@ export const onMessageCreated = functions.firestore
     const senderName = (message.senderName ?? 'CotidyFit').trim();
     const messageType = (message.type ?? 'text').toString().trim() || 'text';
     const text = (message.text ?? '').trim();
+    const clientHandledUnread = message.clientHandledUnread === true;
 
     const body =
       messageType !== 'text'
@@ -147,17 +151,74 @@ export const onMessageCreated = functions.firestore
     const recipients = senderUid.length > 0 ? members.filter((m) => m !== senderUid) : members;
     if (recipients.length === 0) return;
 
+    // 0) Ensure chat-level last message fields are always up to date.
+    //    This is used by the client to sort and preview chats.
+    try {
+      await admin
+        .firestore()
+        .collection('chats')
+        .doc(chatId)
+        .set(
+          {
+            lastMessage: {
+              senderUid,
+              senderName,
+              type: messageType,
+              text,
+              createdAtMs: Date.now(),
+            },
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            lastMessageSender: senderUid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+    } catch (e) {
+      functions.logger.warn('Failed to update lastMessage fields', e);
+    }
+
     // 1) WhatsApp-style unread counters (does NOT depend on mute).
     //    unreadCountByUser.{recipient}++ for all recipients.
+    //    Also unhide chats for recipients if they deleted the conversation locally.
     try {
-      const updates: Record<string, any> = {};
-      for (const r of recipients) {
-        updates[`unreadCountByUser.${r}`] = admin.firestore.FieldValue.increment(1);
+      if (!clientHandledUnread) {
+        await admin.firestore().runTransaction(async (tx) => {
+          const s = await tx.get(chatRef);
+          const d = (s.data() ?? {}) as FirebaseFirestore.DocumentData;
+
+          // unreadCountByUser: ensure map-like, then bump recipients.
+          const rawUnread = d.unreadCountByUser;
+          const unread: Record<string, number> =
+            rawUnread && typeof rawUnread === 'object' && !Array.isArray(rawUnread)
+              ? { ...(rawUnread as Record<string, any>) }
+              : {};
+
+          for (const r of recipients) {
+            const cur = unread[r];
+            const curNum = typeof cur === 'number' && Number.isFinite(cur) ? cur : 0;
+            unread[r] = curNum + 1;
+          }
+
+          // hiddenForUsers: remove recipients from the array to make chats reappear.
+          const rawHidden = d.hiddenForUsers;
+          const hidden: string[] = Array.isArray(rawHidden)
+            ? rawHidden
+                .map((x) => (x ?? '').toString())
+                .filter((x) => x.trim().length > 0)
+            : [];
+          const toRemove = new Set(recipients);
+          const newHidden = hidden.filter((u) => !toRemove.has(u));
+
+          tx.set(
+            chatRef,
+            {
+              unreadCountByUser: unread,
+              hiddenForUsers: newHidden,
+            },
+            { merge: true }
+          );
+        });
       }
-      if (senderUid.length > 0) {
-        updates[`unreadCountByUser.${senderUid}`] = 0;
-      }
-      await admin.firestore().collection('chats').doc(chatId).set(updates, { merge: true });
     } catch (e) {
       functions.logger.warn('Failed to update unreadCountByUser', e);
     }

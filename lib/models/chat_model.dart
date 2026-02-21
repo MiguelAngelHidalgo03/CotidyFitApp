@@ -1,11 +1,6 @@
 import 'message_model.dart';
 
-enum ChatType {
-  profesional,
-  amigo,
-  grupo,
-  comunidad,
-}
+enum ChatType { profesional, amigo, grupo, comunidad }
 
 extension ChatTypeX on ChatType {
   String get label {
@@ -28,6 +23,11 @@ class ChatModel {
   final String title;
   final String avatarKey;
 
+  /// True when this conversation is hidden for the current user.
+  ///
+  /// Used for WhatsApp-style "delete conversation locally".
+  final bool hiddenForMe;
+
   final bool readOnly;
 
   final int unreadCount;
@@ -40,6 +40,7 @@ class ChatModel {
     required this.type,
     required this.title,
     required this.avatarKey,
+    this.hiddenForMe = false,
     required this.readOnly,
     required this.unreadCount,
     required this.updatedAtMs,
@@ -52,6 +53,7 @@ class ChatModel {
     ChatType? type,
     String? title,
     String? avatarKey,
+    bool? hiddenForMe,
     bool? readOnly,
     int? unreadCount,
     int? updatedAtMs,
@@ -62,6 +64,7 @@ class ChatModel {
       type: type ?? this.type,
       title: title ?? this.title,
       avatarKey: avatarKey ?? this.avatarKey,
+      hiddenForMe: hiddenForMe ?? this.hiddenForMe,
       readOnly: readOnly ?? this.readOnly,
       unreadCount: unreadCount ?? this.unreadCount,
       updatedAtMs: updatedAtMs ?? this.updatedAtMs,
@@ -70,15 +73,16 @@ class ChatModel {
   }
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'type': type.name,
-        'title': title,
-        'avatarKey': avatarKey,
-        'readOnly': readOnly,
-        'unreadCount': unreadCount,
-        'updatedAtMs': updatedAtMs,
-        'messages': [for (final m in messages) m.toJson()],
-      };
+    'id': id,
+    'type': type.name,
+    'title': title,
+    'avatarKey': avatarKey,
+    'hiddenForMe': hiddenForMe,
+    'readOnly': readOnly,
+    'unreadCount': unreadCount,
+    'updatedAtMs': updatedAtMs,
+    'messages': [for (final m in messages) m.toJson()],
+  };
 
   static ChatModel? fromJson(Map<String, Object?> json) {
     final id = json['id'];
@@ -111,15 +115,24 @@ class ChatModel {
 
     final updatedAtMs = json['updatedAtMs'] is int
         ? json['updatedAtMs'] as int
-        : (messages.isEmpty ? DateTime.now().millisecondsSinceEpoch : messages.last.createdAtMs);
+        : (messages.isEmpty
+              ? DateTime.now().millisecondsSinceEpoch
+              : messages.last.createdAtMs);
 
     return ChatModel(
       id: id.trim(),
       type: type,
       title: title.trim(),
-      avatarKey: avatarKey is String && avatarKey.trim().isNotEmpty ? avatarKey.trim() : title.trim(),
+      avatarKey: avatarKey is String && avatarKey.trim().isNotEmpty
+          ? avatarKey.trim()
+          : title.trim(),
+      hiddenForMe: json['hiddenForMe'] is bool
+          ? json['hiddenForMe'] as bool
+          : false,
       readOnly: json['readOnly'] is bool ? json['readOnly'] as bool : false,
-      unreadCount: json['unreadCount'] is int ? (json['unreadCount'] as int).clamp(0, 999) : 0,
+      unreadCount: json['unreadCount'] is int
+          ? (json['unreadCount'] as int).clamp(0, 999)
+          : 0,
       updatedAtMs: updatedAtMs,
       messages: messages,
     );

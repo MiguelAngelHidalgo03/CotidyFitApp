@@ -121,7 +121,8 @@ exports.onMessageCreated = functions.firestore
     .onCreate(async (snap, context) => {
     const chatId = context.params.chatId;
     const message = snap.data();
-    const chatSnap = await admin.firestore().collection('chats').doc(chatId).get();
+    const chatRef = admin.firestore().collection('chats').doc(chatId);
+    const chatSnap = await chatRef.get();
     const chat = chatSnap.data();
     const members = (chat?.members ?? []).filter((m) => typeof m === 'string' && m.trim().length > 0);
     if (members.length < 2)
@@ -130,6 +131,7 @@ exports.onMessageCreated = functions.firestore
     const senderName = (message.senderName ?? 'CotidyFit').trim();
     const messageType = (message.type ?? 'text').toString().trim() || 'text';
     const text = (message.text ?? '').trim();
+    const clientHandledUnread = message.clientHandledUnread === true;
     const body = messageType !== 'text'
         ? 'Nuevo mensaje'
         : text.length === 0
@@ -140,17 +142,62 @@ exports.onMessageCreated = functions.firestore
     const recipients = senderUid.length > 0 ? members.filter((m) => m !== senderUid) : members;
     if (recipients.length === 0)
         return;
+    // 0) Ensure chat-level last message fields are always up to date.
+    //    This is used by the client to sort and preview chats.
+    try {
+        await admin
+            .firestore()
+            .collection('chats')
+            .doc(chatId)
+            .set({
+            lastMessage: {
+                senderUid,
+                senderName,
+                type: messageType,
+                text,
+                createdAtMs: Date.now(),
+            },
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            lastMessageSender: senderUid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    }
+    catch (e) {
+        functions.logger.warn('Failed to update lastMessage fields', e);
+    }
     // 1) WhatsApp-style unread counters (does NOT depend on mute).
     //    unreadCountByUser.{recipient}++ for all recipients.
+    //    Also unhide chats for recipients if they deleted the conversation locally.
     try {
-        const updates = {};
-        for (const r of recipients) {
-            updates[`unreadCountByUser.${r}`] = admin.firestore.FieldValue.increment(1);
+        if (!clientHandledUnread) {
+            await admin.firestore().runTransaction(async (tx) => {
+                const s = await tx.get(chatRef);
+                const d = (s.data() ?? {});
+                // unreadCountByUser: ensure map-like, then bump recipients.
+                const rawUnread = d.unreadCountByUser;
+                const unread = rawUnread && typeof rawUnread === 'object' && !Array.isArray(rawUnread)
+                    ? { ...rawUnread }
+                    : {};
+                for (const r of recipients) {
+                    const cur = unread[r];
+                    const curNum = typeof cur === 'number' && Number.isFinite(cur) ? cur : 0;
+                    unread[r] = curNum + 1;
+                }
+                // hiddenForUsers: remove recipients from the array to make chats reappear.
+                const rawHidden = d.hiddenForUsers;
+                const hidden = Array.isArray(rawHidden)
+                    ? rawHidden
+                        .map((x) => (x ?? '').toString())
+                        .filter((x) => x.trim().length > 0)
+                    : [];
+                const toRemove = new Set(recipients);
+                const newHidden = hidden.filter((u) => !toRemove.has(u));
+                tx.set(chatRef, {
+                    unreadCountByUser: unread,
+                    hiddenForUsers: newHidden,
+                }, { merge: true });
+            });
         }
-        if (senderUid.length > 0) {
-            updates[`unreadCountByUser.${senderUid}`] = 0;
-        }
-        await admin.firestore().collection('chats').doc(chatId).set(updates, { merge: true });
     }
     catch (e) {
         functions.logger.warn('Failed to update unreadCountByUser', e);

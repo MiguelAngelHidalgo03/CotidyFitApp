@@ -15,8 +15,8 @@ enum SendFriendRequestResult {
 
 class FriendService {
   FriendService({FirebaseFirestore? db, ChatService? chatService})
-      : _dbOverride = db,
-        _chatService = chatService ?? ChatService(db: db);
+    : _dbOverride = db,
+      _chatService = chatService ?? ChatService(db: db);
 
   final FirebaseFirestore? _dbOverride;
   final ChatService _chatService;
@@ -47,7 +47,10 @@ class FriendService {
 
     // 1) Already friends?
     try {
-      final friendshipSnap = await _db.collection('friendships').doc(pairId).get();
+      final friendshipSnap = await _db
+          .collection('friendships')
+          .doc(pairId)
+          .get();
       if (friendshipSnap.exists) return SendFriendRequestResult.alreadyFriends;
     } on FirebaseException catch (e) {
       // Some rule sets deny `get` on missing docs; treat as not friends.
@@ -89,17 +92,14 @@ class FriendService {
     final uids = [me, other]..sort();
 
     try {
-      await reqRef.set(
-        {
-          'uids': uids,
-          'requesterUid': me,
-          'addresseeUid': other,
-          'status': 'pending',
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: false),
-      );
+      await reqRef.set({
+        'uids': uids,
+        'requesterUid': me,
+        'addresseeUid': other,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: false));
       return SendFriendRequestResult.created;
     } on FirebaseException catch (e) {
       // Surface rules issues for better UX (e.g. blocked-by-other => permission-denied).
@@ -133,7 +133,10 @@ class FriendService {
     );
 
     // Read the tag reservation doc directly. This avoids Firestore query permission failures.
-    DocumentSnapshot<Map<String, dynamic>> tagSnap = await db.collection('user_tags').doc(searchable).get();
+    DocumentSnapshot<Map<String, dynamic>> tagSnap = await db
+        .collection('user_tags')
+        .doc(searchable)
+        .get();
     Map<String, dynamic>? tagData = tagSnap.data();
 
     // Back-compat: older identities used a different doc id scheme.
@@ -166,10 +169,10 @@ class FriendService {
     }
   }
 
-  /// Removes friendship. Optionally purges the conversation (chat doc + messages).
+  /// Removes friendship.
   ///
-  /// If [deleteConversation] is false, the chat doc remains but messages sending will be prevented
-  /// by rules because messages require an existing friendship.
+  /// If [deleteConversation] is true, it hides the conversation ONLY for the current user
+  /// (WhatsApp-style local delete) using chats/{pairId}.hiddenForUsers.
   Future<void> removeFriend({
     required String myUid,
     required String friendUid,
@@ -182,6 +185,16 @@ class FriendService {
     if (me.isEmpty || other.isEmpty || me == other) return;
 
     final pairId = SocialFirestoreService.pairIdFor(me, other);
+
+    // If the user chose to delete the conversation locally, ensure the chat doc exists
+    // while the friendship still exists.
+    if (deleteConversation) {
+      try {
+        await _chatService.ensureDmChatFromFriendship(chatId: pairId);
+      } catch (_) {
+        // ignore
+      }
+    }
 
     // Always remove friendship and any existing request artifact.
     try {
@@ -196,18 +209,18 @@ class FriendService {
     }
 
     if (deleteConversation) {
-      await _chatService.purgeChatStrict(chatId: pairId);
+      try {
+        await _db.collection('chats').doc(pairId).update({
+          'hiddenForUsers': FieldValue.arrayUnion([me]),
+          'unreadCountByUser.${me}': 0,
+        });
+      } catch (_) {
+        // ignore
+      }
     }
   }
 
-  /// Removes friendship and related social artifacts for a pair.
-  ///
-  /// Best-effort deletes:
-  /// - friendships/{pairId}
-  /// - friend_requests/{pairId}
-  /// - chats/{pairId}
-  ///
-  /// Note: deleting messages subcollection is not possible from the client.
+  /// Back-compat helper: removes friendship and locally hides the conversation for current user.
   Future<void> removeFriendshipAndChat({
     required String myUid,
     required String friendUid,

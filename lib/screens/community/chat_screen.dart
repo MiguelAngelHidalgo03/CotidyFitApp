@@ -81,12 +81,31 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _dmChatEnsuredId;
   bool _dmEnsuringChat = false;
 
-  String? _dmUnreadResetChatId;
+  bool _dmDidResetUnreadOnOpen = false;
 
   String? _dmMissingChatCheckedId;
   Future<bool>? _dmMissingChatHasFriendshipFuture;
 
   bool _presencePinged = false;
+
+  Future<void> _resetDmUnreadOnOpenOnce() async {
+    if (_dmDidResetUnreadOnOpen) return;
+    _dmDidResetUnreadOnOpen = true;
+
+    if (widget.scope != ChatScope.dmFirestore) return;
+    final chatId = (widget.chatId ?? '').trim();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (chatId.isEmpty || currentUser == null) return;
+
+    final chatRef = FirebaseFirestore.instance.collection('chats').doc(chatId);
+    try {
+      await chatRef.update({
+        'unreadCountByUser.${currentUser.uid}': 0,
+      });
+    } catch (_) {
+      // Best-effort; don't break streams/UI.
+    }
+  }
 
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -297,6 +316,11 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.scope == ChatScope.dmFirestore) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _resetDmUnreadOnOpenOnce();
+      });
+    }
     _load();
   }
 
@@ -591,7 +615,8 @@ class _ChatScreenState extends State<ChatScreen> {
           // If the chat doc was deleted (block/delete conversation), recreate it only if friendship exists.
           final chatDoc = chatSnap.data;
           if (chatDoc == null || chatDoc.exists == false) {
-            if (_dmMissingChatCheckedId != chatId || _dmMissingChatHasFriendshipFuture == null) {
+            if (_dmMissingChatCheckedId != chatId ||
+                _dmMissingChatHasFriendshipFuture == null) {
               _dmMissingChatCheckedId = chatId;
               _dmMissingChatHasFriendshipFuture = FirebaseFirestore.instance
                   .collection('friendships')
@@ -606,7 +631,9 @@ class _ChatScreenState extends State<ChatScreen> {
               builder: (context, f) {
                 if (f.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
-                    body: SafeArea(child: Center(child: CircularProgressIndicator())),
+                    body: SafeArea(
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
                   );
                 }
 
@@ -626,7 +653,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                               const SizedBox(height: 12),
                               FilledButton(
-                                onPressed: () => Navigator.of(context).maybePop(),
+                                onPressed: () =>
+                                    Navigator.of(context).maybePop(),
                                 child: const Text('Volver'),
                               ),
                             ],
@@ -642,7 +670,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   _dmChatEnsuredId = chatId;
                   WidgetsBinding.instance.addPostFrameCallback((_) async {
                     try {
-                      await _chatService.ensureDmChatFromFriendship(chatId: chatId);
+                      await _chatService.ensureDmChatFromFriendship(
+                        chatId: chatId,
+                      );
                     } finally {
                       _dmEnsuringChat = false;
                     }
@@ -650,7 +680,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 return const Scaffold(
-                  body: SafeArea(child: Center(child: CircularProgressIndicator())),
+                  body: SafeArea(
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
                 );
               },
             );
@@ -666,14 +698,6 @@ class _ChatScreenState extends State<ChatScreen> {
             orElse: () => '',
           );
           _dmPeerUid = peerUid.isEmpty ? null : peerUid;
-
-          // Reset unread counter when opening the chat.
-          if (_dmUnreadResetChatId != chatId) {
-            _dmUnreadResetChatId = chatId;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _social.resetUnreadCount(chatId: chatId);
-            });
-          }
 
           final namesRaw = data?['names'];
           final names = namesRaw is Map
@@ -711,480 +735,559 @@ class _ChatScreenState extends State<ChatScreen> {
                   final isFriend = friendshipSnap.data?.exists ?? false;
 
                   return Scaffold(
-                appBar: AppBar(
-                  centerTitle: true,
-                  title: _dmSearchActive
-                      ? SizedBox(
-                          height: 40,
-                          child: TextField(
-                            controller: _dmSearchCtrl,
-                            focusNode: _dmSearchFocus,
-                            textInputAction: TextInputAction.search,
-                            onChanged: _updateDmSearch,
-                            onSubmitted: (_) => _jumpDmMatch(1),
-                            decoration: const InputDecoration(
-                              hintText: 'Buscar…',
-                              prefixIcon: Icon(Icons.search),
+                    appBar: AppBar(
+                      centerTitle: true,
+                      title: _dmSearchActive
+                          ? SizedBox(
+                              height: 40,
+                              child: TextField(
+                                controller: _dmSearchCtrl,
+                                focusNode: _dmSearchFocus,
+                                textInputAction: TextInputAction.search,
+                                onChanged: _updateDmSearch,
+                                onSubmitted: (_) => _jumpDmMatch(1),
+                                decoration: const InputDecoration(
+                                  hintText: 'Buscar…',
+                                  prefixIcon: Icon(Icons.search),
+                                ),
+                              ),
+                            )
+                          : InkWell(
+                              borderRadius: const BorderRadius.all(
+                                Radius.circular(10),
+                              ),
+                              onTap: peerUid.isEmpty
+                                  ? null
+                                  : () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              PublicProfileScreen(uid: peerUid),
+                                        ),
+                                      );
+                                    },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      peerName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _presenceLabel(lastActiveMs),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: CFColors.textSecondary,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                      actions: [
+                        if (_dmSearchActive) ...[
+                          IconButton(
+                            tooltip: 'Anterior',
+                            onPressed: () => _jumpDmMatch(-1),
+                            icon: const Icon(Icons.keyboard_arrow_up),
+                          ),
+                          IconButton(
+                            tooltip: 'Siguiente',
+                            onPressed: () => _jumpDmMatch(1),
+                            icon: const Icon(Icons.keyboard_arrow_down),
+                          ),
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: Text(
+                                _dmSearchMatchIds.isEmpty
+                                    ? '0/0'
+                                    : '${_dmSearchMatchIndex + 1}/${_dmSearchMatchIds.length}',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: CFColors.textSecondary),
+                              ),
                             ),
                           ),
-                        )
-                      : InkWell(
-                          borderRadius: const BorderRadius.all(
-                            Radius.circular(10),
+                          IconButton(
+                            tooltip: 'Cerrar búsqueda',
+                            onPressed: _stopDmSearch,
+                            icon: const Icon(Icons.close),
                           ),
-                          onTap: peerUid.isEmpty
-                              ? null
-                              : () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          PublicProfileScreen(uid: peerUid),
+                        ] else
+                          Builder(
+                            builder: (context) {
+                              final muteUntil =
+                                  MuteService.muteUntilFromChatData(
+                                    data: data,
+                                    uid: myUid,
+                                  );
+                              final muted = MuteService.isMuted(muteUntil);
+
+                              Future<void> openMuteSheet() async {
+                                final picked =
+                                    await showModalBottomSheet<_MutePick>(
+                                      context: context,
+                                      backgroundColor: Colors.transparent,
+                                      builder: (context) {
+                                        return SafeArea(
+                                          top: false,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: ProgressSectionCard(
+                                              padding: const EdgeInsets.all(6),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  ListTile(
+                                                    title: const Text('1 día'),
+                                                    onTap: () =>
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop(
+                                                          _MutePick(
+                                                            days: 1,
+                                                            label: '1 día',
+                                                          ),
+                                                        ),
+                                                  ),
+                                                  const Divider(height: 1),
+                                                  ListTile(
+                                                    title: const Text(
+                                                      '1 semana',
+                                                    ),
+                                                    onTap: () =>
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop(
+                                                          _MutePick(
+                                                            days: 7,
+                                                            label: '1 semana',
+                                                          ),
+                                                        ),
+                                                  ),
+                                                  const Divider(height: 1),
+                                                  ListTile(
+                                                    title: const Text(
+                                                      'Siempre',
+                                                    ),
+                                                    onTap: () =>
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop(
+                                                          _MutePick(
+                                                            always: true,
+                                                            label: 'Siempre',
+                                                          ),
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+
+                                if (picked == null) return;
+
+                                final until = picked.always
+                                    ? DateTime.now().add(
+                                        const Duration(days: 3650),
+                                      )
+                                    : DateTime.now().add(
+                                        Duration(days: picked.days),
+                                      );
+
+                                await _muteService.setMuteUntil(
+                                  chatId: chatId,
+                                  until: until,
+                                );
+                                if (!mounted) return;
+                                _snack(
+                                  'Notificaciones silenciadas durante ${picked.label}',
+                                );
+                              }
+
+                              return PopupMenuButton<String>(
+                                onSelected: (value) async {
+                                  final navigator = Navigator.of(context);
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
+                                  void snack(String msg) {
+                                    messenger.showSnackBar(
+                                      SnackBar(content: Text(msg)),
+                                    );
+                                  }
+
+                                  if (value == 'search') {
+                                    _startDmSearch();
+                                    return;
+                                  }
+
+                                  if (value == 'mute') {
+                                    await openMuteSheet();
+                                    return;
+                                  }
+
+                                  if (value == 'unmute') {
+                                    await _muteService.setMuteUntil(
+                                      chatId: chatId,
+                                      until: null,
+                                    );
+                                    if (!mounted) return;
+                                    snack('Notificaciones activadas');
+                                    return;
+                                  }
+
+                                  if (value == 'view') {
+                                    if (peerUid.isEmpty) return;
+                                    navigator.push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            PublicProfileScreen(uid: peerUid),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  if (value == 'delete_conversation') {
+                                    try {
+                                      // WhatsApp-style (local): hide only for me and leave the chat list immediately.
+                                      await _social.hideChatForMe(
+                                        chatId: chatId,
+                                      );
+                                      if (!mounted) return;
+                                      _stopDmSearch();
+                                      _textCtrl.clear();
+                                      navigator.pop('go_chats_tab');
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      snack(
+                                        'No se pudo borrar la conversación',
+                                      );
+                                    }
+                                    return;
+                                  }
+
+                                  if (peerUid.isEmpty) return;
+
+                                  if (value == 'remove_friend') {
+                                    final ok =
+                                        await _confirmRemoveFriendStep1();
+                                    if (!ok) return;
+                                    final deleteConversation =
+                                        await _confirmRemoveFriendStep2DeleteConversation();
+                                    try {
+                                      await _friendService.removeFriend(
+                                        myUid: myUid,
+                                        friendUid: peerUid,
+                                        deleteConversation: deleteConversation,
+                                      );
+                                      if (!mounted) return;
+                                      _stopDmSearch();
+                                      _textCtrl.clear();
+                                      navigator.pop('go_chats_tab');
+                                    } catch (_) {
+                                      if (!mounted) return;
+                                      snack('No se pudo eliminar al amigo');
+                                    }
+                                    return;
+                                  }
+
+                                  if (value == 'block') {
+                                    final ok = await _confirmBlock(
+                                      peerName: peerName,
+                                    );
+                                    if (!ok) return;
+                                    try {
+                                      await _blockService.blockUser(
+                                        blockedUid: peerUid,
+                                      );
+                                      if (!mounted) return;
+                                      snack('Usuario bloqueado correctamente');
+                                      navigator.maybePop();
+                                    } catch (_) {
+                                      if (!mounted) return;
+                                      snack('No se pudo bloquear');
+                                    }
+                                  }
+
+                                  if (value == 'report') {
+                                    snack(
+                                      'Esta función estará disponible próximamente.',
+                                    );
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'search',
+                                    child: Text('Buscar en el chat'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: muted ? 'unmute' : 'mute',
+                                    child: Text(
+                                      muted
+                                          ? 'Activar notificaciones'
+                                          : 'Silenciar notificaciones',
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'view',
+                                    child: Text('Ver contacto'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete_conversation',
+                                    child: Text('Borrar conversación'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'remove_friend',
+                                    child: Text('Eliminar amigo'),
+                                  ),
+                                  const PopupMenuDivider(),
+                                  const PopupMenuItem(
+                                    value: 'block',
+                                    child: Text('Bloquear'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'report',
+                                    child: Text('Reportar'),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                    body: SafeArea(
+                      child: Column(
+                        children: [
+                          if (!isFriend)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                              child: ProgressSectionCard(
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.lock_outline,
+                                      color: CFColors.primary,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Chat solo lectura',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: StreamBuilder<List<MessageModel>>(
+                              stream: _dmMessagesStream,
+                              builder: (context, snap) {
+                                if (snap.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                }
+
+                                if (snap.hasError) {
+                                  return Padding(
+                                    padding: const EdgeInsets.all(20),
+                                    child: ProgressSectionCard(
+                                      child: Text(
+                                        'No se pudieron cargar los mensajes.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
                                     ),
                                   );
-                                },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 4,
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  peerName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _presenceLabel(lastActiveMs),
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: CFColors.textSecondary),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                  actions: [
-                    if (_dmSearchActive) ...[
-                      IconButton(
-                        tooltip: 'Anterior',
-                        onPressed: () => _jumpDmMatch(-1),
-                        icon: const Icon(Icons.keyboard_arrow_up),
-                      ),
-                      IconButton(
-                        tooltip: 'Siguiente',
-                        onPressed: () => _jumpDmMatch(1),
-                        icon: const Icon(Icons.keyboard_arrow_down),
-                      ),
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text(
-                            _dmSearchMatchIds.isEmpty
-                                ? '0/0'
-                                : '${_dmSearchMatchIndex + 1}/${_dmSearchMatchIds.length}',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: CFColors.textSecondary),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Cerrar búsqueda',
-                        onPressed: _stopDmSearch,
-                        icon: const Icon(Icons.close),
-                      ),
-                    ] else
-                      Builder(
-                        builder: (context) {
-                          final muteUntil = MuteService.muteUntilFromChatData(data: data, uid: myUid);
-                          final muted = MuteService.isMuted(muteUntil);
-
-                          Future<void> openMuteSheet() async {
-                            final picked = await showModalBottomSheet<_MutePick>(
-                              context: context,
-                              backgroundColor: Colors.transparent,
-                              builder: (context) {
-                                return SafeArea(
-                                  top: false,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: ProgressSectionCard(
-                                      padding: const EdgeInsets.all(6),
+                                }
+                                final messages =
+                                    snap.data ?? const <MessageModel>[];
+                                _latestDmMessages = messages;
+                                if (messages.isEmpty) {
+                                  return Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24),
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          ListTile(
-                                            title: const Text('1 día'),
-                                            onTap: () => Navigator.of(context).pop(_MutePick(days: 1, label: '1 día')),
+                                          Icon(
+                                            Icons.chat_bubble_outline,
+                                            size: 28,
+                                            color: CFColors.textSecondary,
                                           ),
-                                          const Divider(height: 1),
-                                          ListTile(
-                                            title: const Text('1 semana'),
-                                            onTap: () => Navigator.of(context).pop(_MutePick(days: 7, label: '1 semana')),
-                                          ),
-                                          const Divider(height: 1),
-                                          ListTile(
-                                            title: const Text('Siempre'),
-                                            onTap: () => Navigator.of(context).pop(_MutePick(always: true, label: 'Siempre')),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            'Aún no hay mensajes.',
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: CFColors.textSecondary,
+                                                ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
-                            );
-
-                            if (picked == null) return;
-
-                            final until = picked.always
-                                ? DateTime.now().add(const Duration(days: 3650))
-                                : DateTime.now().add(Duration(days: picked.days));
-
-                            await _muteService.setMuteUntil(chatId: chatId, until: until);
-                            if (!mounted) return;
-                            _snack('Notificaciones silenciadas durante ${picked.label}');
-                          }
-
-                          return PopupMenuButton<String>(
-                            onSelected: (value) async {
-                              final navigator = Navigator.of(context);
-                              final messenger = ScaffoldMessenger.of(context);
-                              void snack(String msg) {
-                                messenger.showSnackBar(SnackBar(content: Text(msg)));
-                              }
-
-                              if (value == 'search') {
-                                _startDmSearch();
-                                return;
-                              }
-
-                              if (value == 'mute') {
-                                await openMuteSheet();
-                                return;
-                              }
-
-                              if (value == 'unmute') {
-                                await _muteService.setMuteUntil(chatId: chatId, until: null);
-                                if (!mounted) return;
-                                snack('Notificaciones activadas');
-                                return;
-                              }
-
-                              if (value == 'view') {
-                                if (peerUid.isEmpty) return;
-                                navigator.push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        PublicProfileScreen(uid: peerUid),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              if (value == 'delete_conversation') {
-                                try {
-                                  // WhatsApp-style: delete chat + messages and leave the chat list immediately.
-                                  await _chatService.purgeChatStrict(chatId: chatId);
-                                  if (!mounted) return;
-                                  _stopDmSearch();
-                                  _textCtrl.clear();
-                                  navigator.maybePop();
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  final msg = switch (e) {
-                                    FirebaseException(code: final code) => 'No se pudo borrar la conversación. ($code)',
-                                    _ => 'No se pudo borrar la conversación',
-                                  };
-                                  snack(msg);
-                                }
-                                return;
-                              }
-
-                              if (peerUid.isEmpty) return;
-
-                              if (value == 'remove_friend') {
-                                final ok = await _confirmRemoveFriendStep1();
-                                if (!ok) return;
-                                final deleteConversation =
-                                    await _confirmRemoveFriendStep2DeleteConversation();
-                                try {
-                                  await _friendService.removeFriend(
-                                    myUid: myUid,
-                                    friendUid: peerUid,
-                                    deleteConversation: deleteConversation,
                                   );
-                                  if (!mounted) return;
-                                  if (deleteConversation) {
-                                    navigator.maybePop();
-                                  }
-                                } catch (_) {
-                                  if (!mounted) return;
-                                  snack('No se pudo eliminar al amigo');
                                 }
-                                return;
-                              }
 
-                              if (value == 'block') {
-                                final ok = await _confirmBlock(
-                                  peerName: peerName,
-                                );
-                                if (!ok) return;
-                                try {
-                                  await _blockService.blockUser(
-                                    blockedUid: peerUid,
-                                  );
-                                  if (!mounted) return;
-                                  snack('Usuario bloqueado correctamente');
-                                  navigator.maybePop();
-                                } catch (_) {
-                                  if (!mounted) return;
-                                  snack('No se pudo bloquear');
-                                }
-                              }
-
-                              if (value == 'report') {
-                                snack('Esta función estará disponible próximamente.');
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'search',
-                                child: Text('Buscar en el chat'),
-                              ),
-                              PopupMenuItem(
-                                value: muted ? 'unmute' : 'mute',
-                                child: Text(
-                                  muted
-                                      ? 'Activar notificaciones'
-                                      : 'Silenciar notificaciones',
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'view',
-                                child: Text('Ver contacto'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'delete_conversation',
-                                child: Text('Borrar conversación'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'remove_friend',
-                                child: Text('Eliminar amigo'),
-                              ),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(
-                                value: 'block',
-                                child: Text('Bloquear'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'report',
-                                child: Text('Reportar'),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                  ],
-                ),
-                body: SafeArea(
-                  child: Column(
-                    children: [
-                      if (!isFriend)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                          child: ProgressSectionCard(
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.lock_outline,
-                                  color: CFColors.primary,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'Chat solo lectura',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                return ListView.builder(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    14,
+                                    16,
+                                    14,
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      Expanded(
-                        child: StreamBuilder<List<MessageModel>>(
-                          stream: _dmMessagesStream,
-                          builder: (context, snap) {
-                            if (snap.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-
-                            if (snap.hasError) {
-                              return Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: ProgressSectionCard(
-                                  child: Text(
-                                    'No se pudieron cargar los mensajes.',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
-                                  ),
-                                ),
-                              );
-                            }
-                            final messages =
-                                snap.data ?? const <MessageModel>[];
-                            _latestDmMessages = messages;
-                            if (messages.isEmpty) {
-                              return Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: ProgressSectionCard(
-                                  child: Text(
-                                    'Sin mensajes aún.',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
-                                  ),
-                                ),
-                              );
-                            }
-
-                            return ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                14,
-                                16,
-                                14,
-                              ),
-                              reverse: true,
-                              controller: _dmScrollCtrl,
-                              itemCount: messages.length,
-                              itemBuilder: (context, index) {
-                                final m = messages[index];
-                                final dt = DateTime.fromMillisecondsSinceEpoch(
-                                  m.createdAtMs,
-                                );
-                                final day = DateUtilsCF.dateOnly(dt);
-                                final showHeader =
-                                    index == 0 ||
-                                    !DateUtilsCF.isSameDay(
-                                      day,
-                                      DateUtilsCF.dateOnly(
+                                  reverse: true,
+                                  controller: _dmScrollCtrl,
+                                  itemCount: messages.length,
+                                  itemBuilder: (context, index) {
+                                    final m = messages[index];
+                                    final dt =
                                         DateTime.fromMillisecondsSinceEpoch(
-                                          messages[index - 1].createdAtMs,
-                                        ),
-                                      ),
+                                          m.createdAtMs,
+                                        );
+                                    final day = DateUtilsCF.dateOnly(dt);
+                                    // reverse: true + messages are newest-first.
+                                    // Show the separator for the first message of a day in *visual order*
+                                    // (i.e., compare with the next/older message at index + 1).
+                                    final showHeader =
+                                        index == messages.length - 1 ||
+                                        !DateUtilsCF.isSameDay(
+                                          day,
+                                          DateUtilsCF.dateOnly(
+                                            DateTime.fromMillisecondsSinceEpoch(
+                                              messages[index + 1].createdAtMs,
+                                            ),
+                                          ),
+                                        );
+
+                                    final key = _dmMessageKeys.putIfAbsent(
+                                      m.id,
+                                      () => GlobalKey(),
                                     );
+                                    final highlighted =
+                                        _highlightDmMessageId == m.id;
 
-                                final key = _dmMessageKeys.putIfAbsent(
-                                  m.id,
-                                  () => GlobalKey(),
-                                );
-                                final highlighted =
-                                    _highlightDmMessageId == m.id;
-
-                                return Container(
-                                  key: key,
-                                  decoration: highlighted
-                                      ? BoxDecoration(
-                                          borderRadius: const BorderRadius.all(
-                                            Radius.circular(14),
-                                          ),
-                                          color: CFColors.primary.withValues(
-                                            alpha: 0.05,
-                                          ),
-                                          border: Border.all(
-                                            color: CFColors.primary.withValues(
-                                              alpha: 0.55,
-                                            ),
-                                            width: 1.2,
-                                          ),
-                                        )
-                                      : null,
-                                  padding: highlighted
-                                      ? const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 6,
-                                        )
-                                      : EdgeInsets.zero,
-                                  margin: highlighted
-                                      ? const EdgeInsets.symmetric(vertical: 6)
-                                      : EdgeInsets.zero,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      if (showHeader) ...[
-                                        const SizedBox(height: 6),
-                                        Center(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
+                                    return Container(
+                                      key: key,
+                                      decoration: highlighted
+                                          ? BoxDecoration(
+                                              borderRadius:
+                                                  const BorderRadius.all(
+                                                    Radius.circular(14),
+                                                  ),
+                                              color: CFColors.primary
+                                                  .withValues(alpha: 0.05),
+                                              border: Border.all(
+                                                color: CFColors.primary
+                                                    .withValues(alpha: 0.55),
+                                                width: 1.2,
+                                              ),
+                                            )
+                                          : null,
+                                      padding: highlighted
+                                          ? const EdgeInsets.symmetric(
+                                              horizontal: 8,
                                               vertical: 6,
-                                            ),
-                                            decoration: const BoxDecoration(
-                                              color: CFColors.softGray,
-                                              borderRadius: BorderRadius.all(
-                                                Radius.circular(999),
+                                            )
+                                          : EdgeInsets.zero,
+                                      margin: highlighted
+                                          ? const EdgeInsets.symmetric(
+                                              vertical: 6,
+                                            )
+                                          : EdgeInsets.zero,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (showHeader) ...[
+                                            Center(
+                                              child: Container(
+                                                margin:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 10,
+                                                    ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 6,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: CFColors.softGray,
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                ),
+                                                child: Text(
+                                                  _dateChipLabel(day),
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                            child: Text(
-                                              _dateChipLabel(day),
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall
-                                                  ?.copyWith(
-                                                    color:
-                                                        CFColors.textSecondary,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                            ),
+                                          ],
+                                          MessageBubble(
+                                            message: m,
+                                            showAvatar: true,
+                                            avatarKeySeed: m.senderId,
+                                            avatarLabel: m.senderName,
+                                            showTimestamp: true,
                                           ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      MessageBubble(
-                                        message: m,
-                                        showAvatar: true,
-                                        avatarKeySeed: m.senderId,
-                                        avatarLabel: m.senderName,
-                                        showTimestamp: true,
+                                        ],
                                       ),
-                                    ],
-                                  ),
+                                    );
+                                  },
                                 );
                               },
-                            );
-                          },
-                        ),
-                      ),
-                      SafeArea(
-                        top: false,
-                        child: AnimatedPadding(
-                          duration: const Duration(milliseconds: 160),
-                          curve: Curves.easeOut,
-                          padding: EdgeInsets.only(
-                            bottom: MediaQuery.viewInsetsOf(context).bottom,
+                            ),
                           ),
-                          child: _Composer(
-                            enabled: isFriend,
-                            controller: _textCtrl,
-                            onPlus: _openPlusMenu,
-                            onSend: () => _send(MessageType.text, _textCtrl.text),
+                          SafeArea(
+                            top: false,
+                            child: AnimatedPadding(
+                              duration: const Duration(milliseconds: 160),
+                              curve: Curves.easeOut,
+                              padding: EdgeInsets.only(
+                                bottom: MediaQuery.viewInsetsOf(context).bottom,
+                              ),
+                              child: _Composer(
+                                enabled: isFriend,
+                                controller: _textCtrl,
+                                onPlus: _openPlusMenu,
+                                onSend: () =>
+                                    _send(MessageType.text, _textCtrl.text),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              );
+                    ),
+                  );
                 },
               );
             },
@@ -1267,45 +1370,45 @@ class _ChatScreenState extends State<ChatScreen> {
                         final day = DateUtilsCF.dateOnly(dt);
 
                         bool showHeader() {
-                          if (index == 0) return true;
-                          final prev =
-                              messages[messages.length - 1 - (index - 1)];
-                          final prevDay = DateUtilsCF.dateOnly(
+                          // reverse: true (newest at bottom). Show separator when the day changes
+                          // compared to the next/older message in visual order.
+                          if (index == messages.length - 1) return true;
+                          final next =
+                              messages[messages.length - 1 - (index + 1)];
+                          final nextDay = DateUtilsCF.dateOnly(
                             DateTime.fromMillisecondsSinceEpoch(
-                              prev.createdAtMs,
+                              next.createdAtMs,
                             ),
                           );
-                          return !DateUtilsCF.isSameDay(day, prevDay);
+                          return !DateUtilsCF.isSameDay(day, nextDay);
                         }
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (showHeader()) ...[
-                              const SizedBox(height: 6),
                               Center(
                                 child: Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 6,
                                   ),
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     color: CFColors.softGray,
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(999),
-                                    ),
+                                    borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
                                     _dateChipLabel(day),
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: CFColors.textSecondary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 8),
                             ],
                             MessageBubble(message: m),
                           ],

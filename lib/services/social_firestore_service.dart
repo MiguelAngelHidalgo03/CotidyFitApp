@@ -60,7 +60,9 @@ class FriendRequestModel {
 
   bool get isPending => status == 'pending';
 
-  static FriendRequestModel? fromSnap(DocumentSnapshot<Map<String, dynamic>> snap) {
+  static FriendRequestModel? fromSnap(
+    DocumentSnapshot<Map<String, dynamic>> snap,
+  ) {
     final data = snap.data();
     if (data == null) return null;
     final uidsRaw = data['uids'];
@@ -77,7 +79,9 @@ class FriendRequestModel {
     if (uids.length != 2) return null;
 
     final updatedAt = data['updatedAt'];
-    final updatedAtMs = updatedAt is Timestamp ? updatedAt.millisecondsSinceEpoch : DateTime.now().millisecondsSinceEpoch;
+    final updatedAtMs = updatedAt is Timestamp
+        ? updatedAt.millisecondsSinceEpoch
+        : DateTime.now().millisecondsSinceEpoch;
 
     return FriendRequestModel(
       id: snap.id,
@@ -95,13 +99,14 @@ class SocialFirestoreService {
   final FirebaseAuth? _authOverride;
 
   SocialFirestoreService({FirebaseFirestore? db, FirebaseAuth? auth})
-      : _dbOverride = db,
-        _authOverride = auth;
+    : _dbOverride = db,
+      _authOverride = auth;
 
   FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
-  String? get currentUid => Firebase.apps.isEmpty ? null : _auth.currentUser?.uid;
+  String? get currentUid =>
+      Firebase.apps.isEmpty ? null : _auth.currentUser?.uid;
 
   static String pairIdFor(String uidA, String uidB) {
     final a = uidA.trim();
@@ -113,13 +118,10 @@ class SocialFirestoreService {
   Future<void> pingPresence() async {
     final uid = currentUid;
     if (uid == null) return;
-    await _db.collection('user_public').doc(uid).set(
-      {
-        'lastActiveAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _db.collection('user_public').doc(uid).set({
+      'lastActiveAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<String?> resolveUidByUniqueTag(String uniqueTag) async {
@@ -130,7 +132,10 @@ class SocialFirestoreService {
       usernameNormalized: usernameNormalized,
       tag: parts.tag,
     );
-    DocumentSnapshot<Map<String, dynamic>> snap = await _db.collection('user_tags').doc(searchableTag).get();
+    DocumentSnapshot<Map<String, dynamic>> snap = await _db
+        .collection('user_tags')
+        .doc(searchableTag)
+        .get();
     Map<String, dynamic>? data = snap.data();
 
     if (data == null) {
@@ -155,7 +160,7 @@ class SocialFirestoreService {
 
     final qs = await _db
         .collection('user_public')
-      .where('usernameNormalized', isEqualTo: q)
+        .where('usernameNormalized', isEqualTo: q)
         .limit(1)
         .get();
 
@@ -184,57 +189,108 @@ class SocialFirestoreService {
     if (uid == null) return const Stream<List<ChatModel>>.empty();
 
     return _db
-      .collection('chats')
-      .where('members', arrayContains: uid)
-      .snapshots()
-      .map((qs) {
-      final out = <ChatModel>[];
-      for (final doc in qs.docs) {
-        final data = doc.data();
-        final membersRaw = data['members'];
-        if (membersRaw is! List) continue;
-        final members = membersRaw.map((e) => e.toString()).toList();
-        if (members.length != 2) continue;
-        final peerUid = members.firstWhere((m) => m != uid, orElse: () => '');
+        .collection('chats')
+        .where('members', arrayContains: uid)
+        .snapshots()
+        .map((qs) {
+          final out = <ChatModel>[];
+          for (final doc in qs.docs) {
+            final data = doc.data();
+            final membersRaw = data['members'];
+            if (membersRaw is! List) continue;
+            final members = membersRaw.map((e) => e.toString()).toList();
+            if (members.length != 2) continue;
+            final peerUid = members.firstWhere(
+              (m) => m != uid,
+              orElse: () => '',
+            );
 
-        final namesRaw = data['names'];
-        final names = namesRaw is Map ? namesRaw.map((k, v) => MapEntry(k.toString(), v)) : const <String, Object?>{};
-        final peerName = (names[peerUid] as String?)?.trim() ?? 'Chat';
-        final updatedAt = data['updatedAt'];
-        final updatedAtMs = updatedAt is Timestamp ? updatedAt.millisecondsSinceEpoch : DateTime.now().millisecondsSinceEpoch;
+            final namesRaw = data['names'];
+            final names = namesRaw is Map
+                ? namesRaw.map((k, v) => MapEntry(k.toString(), v))
+                : const <String, Object?>{};
+            final peerName = (names[peerUid] as String?)?.trim() ?? 'Chat';
+            // Prefer lastMessageTimestamp for ordering (WhatsApp-style).
+            // Fallbacks avoid pushing chats to the top with DateTime.now().
+            final lastTs = data['lastMessageTimestamp'];
+            final updatedAt = data['updatedAt'];
+            final createdAt = data['createdAt'];
 
-        final last = data['lastMessage'];
-        final lastMessage = _messageFromLastMessageMap(
-          chatId: doc.id,
-          myUid: uid,
-          map: last is Map ? last.map((k, v) => MapEntry(k.toString(), v)) : null,
-        );
+            final lastMessageTimestampMs =
+              lastTs is Timestamp ? lastTs.millisecondsSinceEpoch : null;
+            final updatedAtMsFallback = updatedAt is Timestamp
+              ? updatedAt.millisecondsSinceEpoch
+              : null;
+            final createdAtMsFallback = createdAt is Timestamp
+              ? createdAt.millisecondsSinceEpoch
+              : null;
 
-        final unreadRaw = data['unreadCountByUser'];
-        int unread = 0;
-        if (unreadRaw is Map) {
-          final v = unreadRaw[uid];
-          if (v is int) unread = v;
-          if (v is num) unread = v.toInt();
-          if (v is String) unread = int.tryParse(v) ?? 0;
-        }
+            final last = data['lastMessage'];
+            final lastMessage = _messageFromLastMessageMap(
+              chatId: doc.id,
+              myUid: uid,
+              map: last is Map
+                  ? last.map((k, v) => MapEntry(k.toString(), v))
+                  : null,
+            );
 
-        out.add(
-          ChatModel(
-            id: doc.id,
-            type: ChatType.amigo,
-            title: peerName,
-            avatarKey: peerUid.isEmpty ? peerName : peerUid,
-            readOnly: false,
-            unreadCount: unread.clamp(0, 999),
-            updatedAtMs: updatedAtMs,
-            messages: lastMessage == null ? const [] : [lastMessage],
-          ),
-        );
-      }
-      out.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
-      return out;
-    });
+            int? lastMessageCreatedAtMs;
+            if (last is Map) {
+              final v = last['createdAtMs'];
+              if (v is int) lastMessageCreatedAtMs = v;
+              if (v is num) lastMessageCreatedAtMs = v.toInt();
+              if (v is String) lastMessageCreatedAtMs = int.tryParse(v);
+            }
+
+            final updatedAtMs = lastMessageTimestampMs ??
+                updatedAtMsFallback ??
+                lastMessageCreatedAtMs ??
+                createdAtMsFallback ??
+                0;
+
+            final unreadRaw = data['unreadCountByUser'];
+            int unread = 0;
+            if (unreadRaw is Map) {
+              final v = unreadRaw[uid];
+              if (v is int) unread = v;
+              if (v is num) unread = v.toInt();
+              if (v is String) unread = int.tryParse(v) ?? 0;
+            } else {
+              // Back-compat: some older writes may have used a literal field name with a dot.
+              final v = data['unreadCountByUser.$uid'];
+              if (v is int) unread = v;
+              if (v is num) unread = v.toInt();
+              if (v is String) unread = int.tryParse(v) ?? 0;
+            }
+
+            final hiddenRaw = data['hiddenForUsers'];
+            bool hiddenForMe = false;
+            if (hiddenRaw is List) {
+              for (final v in hiddenRaw) {
+                if (v?.toString() == uid) {
+                  hiddenForMe = true;
+                  break;
+                }
+              }
+            }
+
+            out.add(
+              ChatModel(
+                id: doc.id,
+                type: ChatType.amigo,
+                title: peerName,
+                avatarKey: peerUid.isEmpty ? peerName : peerUid,
+                hiddenForMe: hiddenForMe,
+                readOnly: false,
+                unreadCount: unread.clamp(0, 999),
+                updatedAtMs: updatedAtMs,
+                messages: lastMessage == null ? const [] : [lastMessage],
+              ),
+            );
+          }
+          out.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+          return out;
+        });
   }
 
   /// Resets my unread counter for a chat (WhatsApp-style).
@@ -247,12 +303,44 @@ class SocialFirestoreService {
     if (id.isEmpty) return;
 
     try {
-      await _db.collection('chats').doc(id).set(
-        {
-          'unreadCountByUser.$uid': 0,
-        },
-        SetOptions(merge: true),
-      );
+      await _db.collection('chats').doc(id).update({
+        'unreadCountByUser.${uid}': 0,
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  /// WhatsApp-style local delete: hide the conversation only for current user.
+  ///
+  /// Storage: chats/{chatId}.hiddenForUsers: [uid]
+  Future<void> hideChatForMe({required String chatId}) async {
+    final uid = currentUid;
+    if (uid == null) return;
+    final id = chatId.trim();
+    if (id.isEmpty) return;
+
+    try {
+      await _db.collection('chats').doc(id).update({
+        'hiddenForUsers': FieldValue.arrayUnion([uid]),
+        'unreadCountByUser.${uid}': 0,
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  /// Removes local hide flag for current user.
+  Future<void> unhideChatForMe({required String chatId}) async {
+    final uid = currentUid;
+    if (uid == null) return;
+    final id = chatId.trim();
+    if (id.isEmpty) return;
+
+    try {
+      await _db.collection('chats').doc(id).set({
+        'hiddenForUsers': FieldValue.arrayRemove([uid]),
+      }, SetOptions(merge: true));
     } catch (_) {
       // ignore
     }
@@ -270,40 +358,43 @@ class SocialFirestoreService {
         .limit(120)
         .snapshots()
         .map((qs) {
-      final out = <MessageModel>[];
-      for (final doc in qs.docs) {
-        final data = doc.data();
-        final senderUid = (data['senderUid'] as String?)?.trim() ?? '';
-        final senderName = (data['senderName'] as String?)?.trim() ?? 'Usuario';
-        final text = (data['text'] as String?) ?? '';
-        final typeRaw = (data['type'] as String?)?.trim();
+          final out = <MessageModel>[];
+          for (final doc in qs.docs) {
+            final data = doc.data();
+            final senderUid = (data['senderUid'] as String?)?.trim() ?? '';
+            final senderName =
+                (data['senderName'] as String?)?.trim() ?? 'Usuario';
+            final text = (data['text'] as String?) ?? '';
+            final typeRaw = (data['type'] as String?)?.trim();
 
-        MessageType type = MessageType.text;
-        for (final v in MessageType.values) {
-          if (v.name == typeRaw) {
-            type = v;
-            break;
+            MessageType type = MessageType.text;
+            for (final v in MessageType.values) {
+              if (v.name == typeRaw) {
+                type = v;
+                break;
+              }
+            }
+
+            final createdAt = data['createdAt'];
+            final createdAtMs = createdAt is Timestamp
+                ? createdAt.millisecondsSinceEpoch
+                : DateTime.now().millisecondsSinceEpoch;
+
+            out.add(
+              MessageModel(
+                id: doc.id,
+                chatId: chatId,
+                senderId: senderUid,
+                senderName: senderName,
+                isMine: senderUid == uid,
+                type: type,
+                text: text,
+                createdAtMs: createdAtMs,
+              ),
+            );
           }
-        }
-
-        final createdAt = data['createdAt'];
-        final createdAtMs = createdAt is Timestamp ? createdAt.millisecondsSinceEpoch : DateTime.now().millisecondsSinceEpoch;
-
-        out.add(
-          MessageModel(
-            id: doc.id,
-            chatId: chatId,
-            senderId: senderUid,
-            senderName: senderName,
-            isMine: senderUid == uid,
-            type: type,
-            text: text,
-            createdAtMs: createdAtMs,
-          ),
-        );
-      }
-      return out;
-    });
+          return out;
+        });
   }
 
   Future<void> sendMessage({
@@ -328,24 +419,63 @@ class SocialFirestoreService {
       'type': type.name,
       'text': text.trim(),
       'createdAt': FieldValue.serverTimestamp(),
+      // Prevent backend trigger from double-incrementing unread counters.
+      'clientHandledUnread': true,
     };
 
     await _db.runTransaction((tx) async {
+      // Read chat doc to compute peer uid (for unread + unhide).
+      String? peerUid;
+      try {
+        final chatSnap = await tx.get(chatRef);
+        final d = chatSnap.data();
+        final membersRaw = d?['members'];
+        if (membersRaw is List) {
+          final members = membersRaw.map((e) => e.toString()).toList();
+          if (members.length == 2) {
+            final p = members.firstWhere(
+              (m) => m != uid,
+              orElse: () => '',
+            );
+            if (p.trim().isNotEmpty) peerUid = p.trim();
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
+
       tx.set(msgRef, payload);
-      tx.set(
-        chatRef,
-        {
-          'updatedAt': FieldValue.serverTimestamp(),
-          'lastMessage': {
-            'senderUid': uid,
-            'senderName': senderName.trim().isEmpty ? 'Usuario' : senderName.trim(),
-            'type': type.name,
-            'text': text.trim(),
-            'createdAtMs': DateTime.now().millisecondsSinceEpoch,
-          },
+
+      final unhide = <String>[uid];
+      if (peerUid != null && peerUid!.trim().isNotEmpty) {
+        unhide.add(peerUid!.trim());
+      }
+
+      final chatUpdates = <String, Object?>{
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastMessageTimestamp': FieldValue.serverTimestamp(),
+        'lastMessageSender': uid,
+        // If either side previously deleted the conversation locally, sending a message should make it visible again.
+        'hiddenForUsers': FieldValue.arrayRemove(unhide),
+        'lastMessage': {
+          'senderUid': uid,
+          'senderName': senderName.trim().isEmpty ? 'Usuario' : senderName.trim(),
+          'type': type.name,
+          'text': text.trim(),
+          'createdAtMs': DateTime.now().millisecondsSinceEpoch,
         },
-        SetOptions(merge: true),
-      );
+      };
+
+      // WhatsApp-style unread counter for the recipient.
+      if (peerUid != null && peerUid!.trim().isNotEmpty) {
+        chatUpdates['unreadCountByUser'] = {
+          peerUid!.trim(): FieldValue.increment(1),
+        };
+      }
+
+      tx.set(chatRef, {
+        ...chatUpdates,
+      }, SetOptions(merge: true));
     });
   }
 
@@ -358,17 +488,14 @@ class SocialFirestoreService {
     final uids = [uid, targetUid]..sort();
 
     try {
-      await _db.collection('friend_requests').doc(pairId).set(
-        {
-          'uids': uids,
-          'requesterUid': uid,
-          'addresseeUid': targetUid,
-          'status': 'pending',
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: false),
-      );
+      await _db.collection('friend_requests').doc(pairId).set({
+        'uids': uids,
+        'requesterUid': uid,
+        'addresseeUid': targetUid,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: false));
     } catch (_) {
       // already exists or blocked by rules
     }
@@ -383,14 +510,14 @@ class SocialFirestoreService {
         .where('uids', arrayContains: uid)
         .snapshots()
         .map((qs) {
-      final out = <FriendRequestModel>[];
-      for (final doc in qs.docs) {
-        final m = FriendRequestModel.fromSnap(doc);
-        if (m != null && m.status == 'pending') out.add(m);
-      }
-      out.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
-      return out;
-    });
+          final out = <FriendRequestModel>[];
+          for (final doc in qs.docs) {
+            final m = FriendRequestModel.fromSnap(doc);
+            if (m != null && m.status == 'pending') out.add(m);
+          }
+          out.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+          return out;
+        });
   }
 
   Stream<List<PublicUser>> watchFriends() {
@@ -398,26 +525,43 @@ class SocialFirestoreService {
     if (uid == null) return const Stream<List<PublicUser>>.empty();
 
     return _db
-      .collection('friendships')
-      .where('uids', arrayContains: uid)
-      .snapshots()
-      .map((qs) {
-      final out = <PublicUser>[];
-      for (final doc in qs.docs) {
-        final data = doc.data();
-        final aUid = (data['aUid'] as String?)?.trim() ?? '';
-        final bUid = (data['bUid'] as String?)?.trim() ?? '';
-        final peerUid = aUid == uid ? bUid : aUid;
+        .collection('friendships')
+        .where('uids', arrayContains: uid)
+        .snapshots()
+        .map((qs) {
+          final out = <PublicUser>[];
+          for (final doc in qs.docs) {
+            final data = doc.data();
+            final aUid = (data['aUid'] as String?)?.trim() ?? '';
+            final bUid = (data['bUid'] as String?)?.trim() ?? '';
+            final peerUid = aUid == uid ? bUid : aUid;
 
-        final peerName = (data[uid == aUid ? 'bName' : 'aName'] as String?)?.trim() ?? '';
-        final peerTag = (data[uid == aUid ? 'bUniqueTag' : 'aUniqueTag'] as String?)?.trim() ?? '';
+            final peerName =
+                (data[uid == aUid ? 'bName' : 'aName'] as String?)?.trim() ??
+                '';
+            final peerTag =
+                (data[uid == aUid ? 'bUniqueTag' : 'aUniqueTag'] as String?)
+                    ?.trim() ??
+                '';
 
-        if (peerUid.isEmpty || peerName.isEmpty) continue;
-        out.add(PublicUser(uid: peerUid, displayName: peerName, uniqueTag: peerTag, visible: true, lastActiveAtMs: null));
-      }
-      out.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
-      return out;
-    });
+            if (peerUid.isEmpty || peerName.isEmpty) continue;
+            out.add(
+              PublicUser(
+                uid: peerUid,
+                displayName: peerName,
+                uniqueTag: peerTag,
+                visible: true,
+                lastActiveAtMs: null,
+              ),
+            );
+          }
+          out.sort(
+            (a, b) => a.displayName.toLowerCase().compareTo(
+              b.displayName.toLowerCase(),
+            ),
+          );
+          return out;
+        });
   }
 
   Future<void> acceptFriendRequest(FriendRequestModel req) async {
@@ -444,43 +588,32 @@ class SocialFirestoreService {
       // Delete the request doc to avoid zombie state blocking future requests.
       tx.delete(reqRef);
 
-      tx.set(
-        friendshipRef,
-        {
-          'uids': req.uids,
-          'aUid': a,
-          'bUid': b,
-          'aName': aPublic?.displayName ?? 'Usuario',
-          'bName': bPublic?.displayName ?? 'Usuario',
-          'aUniqueTag': aPublic?.uniqueTag ?? '',
-          'bUniqueTag': bPublic?.uniqueTag ?? '',
-          'createdAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: false),
-      );
+      tx.set(friendshipRef, {
+        'uids': req.uids,
+        'aUid': a,
+        'bUid': b,
+        'aName': aPublic?.displayName ?? 'Usuario',
+        'bName': bPublic?.displayName ?? 'Usuario',
+        'aUniqueTag': aPublic?.uniqueTag ?? '',
+        'bUniqueTag': bPublic?.uniqueTag ?? '',
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: false));
 
-      tx.set(
-        chatRef,
-        {
-          'members': req.uids,
-          'kind': 'dm',
-          'names': {
-            a: aPublic?.displayName ?? 'Usuario',
-            b: bPublic?.displayName ?? 'Usuario',
-          },
-          'uniqueTags': {
-            a: aPublic?.uniqueTag ?? '',
-            b: bPublic?.uniqueTag ?? '',
-          },
-          'unreadCountByUser': {
-            a: 0,
-            b: 0,
-          },
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
+      tx.set(chatRef, {
+        'members': req.uids,
+        'kind': 'dm',
+        'names': {
+          a: aPublic?.displayName ?? 'Usuario',
+          b: bPublic?.displayName ?? 'Usuario',
         },
-        SetOptions(merge: true),
-      );
+        'uniqueTags': {
+          a: aPublic?.uniqueTag ?? '',
+          b: bPublic?.uniqueTag ?? '',
+        },
+        'unreadCountByUser': {a: 0, b: 0},
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -508,7 +641,9 @@ class SocialFirestoreService {
     final senderName = (map['senderName'] as String?)?.trim() ?? 'Usuario';
     final typeRaw = (map['type'] as String?)?.trim();
     final text = (map['text'] as String?) ?? '';
-    final createdAtMs = map['createdAtMs'] is int ? map['createdAtMs'] as int : DateTime.now().millisecondsSinceEpoch;
+    final createdAtMs = map['createdAtMs'] is int
+        ? map['createdAtMs'] as int
+        : DateTime.now().millisecondsSinceEpoch;
 
     MessageType type = MessageType.text;
     for (final v in MessageType.values) {
