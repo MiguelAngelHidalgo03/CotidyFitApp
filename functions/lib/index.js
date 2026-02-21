@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onMessageCreated = exports.deleteChatCascade = void 0;
+exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 if (admin.apps.length === 0) {
@@ -261,4 +261,97 @@ exports.onMessageCreated = functions.firestore
         functions.logger.info(`Cleaning up ${invalidRefs.length} invalid FCM tokens`);
         await Promise.allSettled(invalidRefs.map((r) => r.delete()));
     }
+});
+exports.onTemplateLikeWrite = functions.firestore
+    .document('template_likes/{likeId}')
+    .onWrite(async (change) => {
+    const beforeExists = change.before.exists;
+    const afterExists = change.after.exists;
+    if (beforeExists === afterExists) {
+        // Update without create/delete does not affect totals.
+        return;
+    }
+    const before = (beforeExists ? change.before.data() : undefined) ?? {};
+    const after = (afterExists ? change.after.data() : undefined) ?? {};
+    const templateId = ((after.template_id ?? before.template_id) ?? '').toString().trim();
+    if (templateId.length === 0)
+        return;
+    const delta = afterExists && !beforeExists ? 1 : !afterExists && beforeExists ? -1 : 0;
+    if (delta === 0)
+        return;
+    const db = admin.firestore();
+    const templateRef = db.collection('templates').doc(templateId);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(templateRef);
+        if (!snap.exists)
+            return;
+        const curRaw = snap.get('total_likes');
+        const cur = typeof curRaw === 'number' && Number.isFinite(curRaw) ? curRaw : 0;
+        const next = Math.max(0, Math.min(cur + delta, 1 << 30));
+        tx.set(templateRef, {
+            total_likes: next,
+            updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+});
+exports.onTemplateRatingWrite = functions.firestore
+    .document('template_ratings/{ratingId}')
+    .onWrite(async (change) => {
+    const beforeExists = change.before.exists;
+    const afterExists = change.after.exists;
+    const before = (beforeExists ? change.before.data() : undefined) ?? {};
+    const after = (afterExists ? change.after.data() : undefined) ?? {};
+    const templateId = ((after.template_id ?? before.template_id) ?? '').toString().trim();
+    if (templateId.length === 0)
+        return;
+    const beforeRatingRaw = before.rating;
+    const afterRatingRaw = after.rating;
+    const beforeRating = typeof beforeRatingRaw === 'number' && Number.isFinite(beforeRatingRaw)
+        ? Math.min(5, Math.max(1, Math.trunc(beforeRatingRaw)))
+        : 0;
+    const afterRating = typeof afterRatingRaw === 'number' && Number.isFinite(afterRatingRaw)
+        ? Math.min(5, Math.max(1, Math.trunc(afterRatingRaw)))
+        : 0;
+    let deltaSum = 0;
+    let deltaCount = 0;
+    if (!beforeExists && afterExists) {
+        if (afterRating > 0) {
+            deltaSum = afterRating;
+            deltaCount = 1;
+        }
+    }
+    else if (beforeExists && !afterExists) {
+        if (beforeRating > 0) {
+            deltaSum = -beforeRating;
+            deltaCount = -1;
+        }
+    }
+    else if (beforeExists && afterExists) {
+        // Update: only sum changes.
+        if (beforeRating > 0 && afterRating > 0) {
+            deltaSum = afterRating - beforeRating;
+        }
+    }
+    if (deltaSum === 0 && deltaCount === 0)
+        return;
+    const db = admin.firestore();
+    const templateRef = db.collection('templates').doc(templateId);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(templateRef);
+        if (!snap.exists)
+            return;
+        const sumRaw = snap.get('rating_sum');
+        const countRaw = snap.get('rating_count');
+        const curSum = typeof sumRaw === 'number' && Number.isFinite(sumRaw) ? sumRaw : 0;
+        const curCount = typeof countRaw === 'number' && Number.isFinite(countRaw) ? countRaw : 0;
+        const nextCount = Math.max(0, Math.min(curCount + deltaCount, 1 << 30));
+        const nextSum = nextCount <= 0 ? 0 : Math.max(0, curSum + deltaSum);
+        const nextAvg = nextCount <= 0 ? 0 : nextSum / nextCount;
+        tx.set(templateRef, {
+            rating_sum: nextSum,
+            rating_count: nextCount,
+            avg_rating: nextAvg,
+            updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
 });

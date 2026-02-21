@@ -304,7 +304,7 @@ class SocialFirestoreService {
 
     try {
       await _db.collection('chats').doc(id).update({
-        'unreadCountByUser.${uid}': 0,
+        'unreadCountByUser.$uid': 0,
       });
     } catch (_) {
       // ignore
@@ -323,7 +323,7 @@ class SocialFirestoreService {
     try {
       await _db.collection('chats').doc(id).update({
         'hiddenForUsers': FieldValue.arrayUnion([uid]),
-        'unreadCountByUser.${uid}': 0,
+        'unreadCountByUser.$uid': 0,
       });
     } catch (_) {
       // ignore
@@ -444,11 +444,13 @@ class SocialFirestoreService {
         // ignore
       }
 
+      final peer = peerUid?.trim() ?? '';
+
       tx.set(msgRef, payload);
 
       final unhide = <String>[uid];
-      if (peerUid != null && peerUid!.trim().isNotEmpty) {
-        unhide.add(peerUid!.trim());
+      if (peer.isNotEmpty) {
+        unhide.add(peer);
       }
 
       final chatUpdates = <String, Object?>{
@@ -467,9 +469,9 @@ class SocialFirestoreService {
       };
 
       // WhatsApp-style unread counter for the recipient.
-      if (peerUid != null && peerUid!.trim().isNotEmpty) {
+      if (peer.isNotEmpty) {
         chatUpdates['unreadCountByUser'] = {
-          peerUid!.trim(): FieldValue.increment(1),
+          peer: FieldValue.increment(1),
         };
       }
 

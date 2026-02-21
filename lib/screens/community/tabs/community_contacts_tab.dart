@@ -460,8 +460,9 @@ class _CommunityContactsTabState extends State<CommunityContactsTab>
             ),
             FilledButton(
               onPressed: () {
-                if (nameCtrl.text.trim().isEmpty || tagCtrl.text.trim().isEmpty)
+                if (nameCtrl.text.trim().isEmpty || tagCtrl.text.trim().isEmpty) {
                   return;
+                }
                 Navigator.of(context).pop(true);
               },
               child: const Text('Enviar'),

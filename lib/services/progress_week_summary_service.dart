@@ -2,8 +2,10 @@ import '../models/progress_week_summary.dart';
 import '../models/recipe_model.dart';
 import '../services/daily_data_service.dart';
 import '../services/local_storage_service.dart';
-import '../services/my_day_local_service.dart';
-import '../services/recipes_local_service.dart';
+import '../services/my_day_repository.dart';
+import '../services/my_day_repository_factory.dart';
+import '../services/recipe_repository.dart';
+import '../services/recipes_repository_factory.dart';
 import '../services/workout_history_service.dart';
 import '../services/workout_service.dart';
 import '../utils/date_utils.dart';
@@ -14,21 +16,21 @@ class ProgressWeekSummaryService {
     DailyDataService? daily,
     WorkoutHistoryService? workoutHistory,
     WorkoutService? workouts,
-    MyDayLocalService? myDay,
-    RecipesLocalService? recipes,
+    MyDayRepository? myDay,
+    RecipeRepository? recipes,
   })  : _storage = storage ?? LocalStorageService(),
         _daily = daily ?? DailyDataService(),
         _workoutHistory = workoutHistory ?? WorkoutHistoryService(),
         _workouts = workouts ?? const WorkoutService(),
-        _myDay = myDay ?? MyDayLocalService(),
-        _recipes = recipes ?? RecipesLocalService();
+        _myDay = myDay ?? MyDayRepositoryFactory.create(),
+        _recipes = recipes ?? RecipesRepositoryFactory.create();
 
   final LocalStorageService _storage;
   final DailyDataService _daily;
   final WorkoutHistoryService _workoutHistory;
   final WorkoutService _workouts;
-  final MyDayLocalService _myDay;
-  final RecipesLocalService _recipes;
+  final MyDayRepository _myDay;
+  final RecipeRepository _recipes;
 
   Future<ProgressWeekSummary> getCurrentWeekSummary() async {
     final today = DateUtilsCF.dateOnly(DateTime.now());

@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/my_day_entry_model.dart';
 import '../../models/recipe_model.dart';
-import '../../services/my_day_local_service.dart';
+import '../../services/my_day_repository.dart';
+import '../../services/my_day_repository_factory.dart';
 import '../../services/recipe_favorites_local_service.dart';
 import '../../services/recipe_ratings_local_service.dart';
-import '../../services/recipes_local_service.dart';
+import '../../services/recipe_repository.dart';
+import '../../services/recipes_repository_factory.dart';
 import '../../widgets/progress/progress_section_card.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -19,10 +21,10 @@ class RecipeDetailScreen extends StatefulWidget {
 }
 
 class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
-  final _recipes = RecipesLocalService();
+  final RecipeRepository _recipes = RecipesRepositoryFactory.create();
   final _favorites = RecipeFavoritesLocalService();
   final _ratings = RecipeRatingsLocalService();
-  final _myDay = MyDayLocalService();
+  final MyDayRepository _myDay = MyDayRepositoryFactory.create();
 
   bool _loading = true;
   RecipeModel? _recipe;

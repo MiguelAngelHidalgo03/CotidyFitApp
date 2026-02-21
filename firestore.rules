@@ -3,6 +3,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function _isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+    }
+
     function _pairContainsUid(pairId, uid) {
       // pairId is built as "uidA_uidB" (sorted). This is used to allow `get()` even
       // when the document doesn't exist yet (resource.data would be null).
@@ -82,6 +87,27 @@ service cloud.firestore {
 
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if false;
+    }
+
+    // Admin allowlist: create ONE doc at /admin_users/{yourUid} in Firestore Console.
+    // The admin panel checks this doc, and rules use it for write access.
+    match /admin_users/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // Recipes catalog managed outside the app.
+    match /recipes/{recipeId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if _isAdmin();
+    }
+
+    // App configuration flags (managed outside the app).
+    match /app_config/{docId} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create, update, delete: if _isAdmin();
     }
 
     // Friend requests: one doc per pairId
@@ -200,6 +226,61 @@ service cloud.firestore {
 
         allow update, delete: if false;
       }
+    }
+
+    // --- Nutrition templates (dynamic Plantillas) ---
+    match /templates/{templateId} {
+      allow get, list: if request.auth != null;
+      // Only server-side (Admin SDK / Cloud Functions) should write aggregate fields.
+      allow create, update, delete: if false;
+    }
+
+    match /template_recipes/{docId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    match /template_likes/{likeId} {
+      allow get: if request.auth != null && resource.data.user_id == request.auth.uid;
+
+      // Keep list() queryable for: where('user_id', isEqualTo: request.auth.uid)
+      allow list: if request.auth != null && resource.data.user_id == request.auth.uid;
+
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.template_id is string
+        && likeId.matches('^' + request.auth.uid + '_.*$');
+
+      allow update: if false;
+
+      allow delete: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+    }
+
+    match /template_ratings/{ratingId} {
+      allow get: if request.auth != null && resource.data.user_id == request.auth.uid;
+
+      // Keep list() queryable for: where('user_id', isEqualTo: request.auth.uid)
+      allow list: if request.auth != null && resource.data.user_id == request.auth.uid;
+
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.template_id is string
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && ratingId.matches('^' + request.auth.uid + '_.*$');
+
+      allow update: if request.auth != null
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.template_id == resource.data.template_id
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5;
+
+      allow delete: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
     }
   }
 }

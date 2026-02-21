@@ -6,7 +6,8 @@ import '../services/auth_service.dart';
 import '../services/daily_data_service.dart';
 import '../services/firestore_service.dart';
 import '../services/local_storage_service.dart';
-import '../services/my_day_local_service.dart';
+import '../services/my_day_repository.dart';
+import '../services/my_day_repository_factory.dart';
 import '../services/health_service.dart';
 import '../services/workout_session_service.dart';
 import '../utils/date_utils.dart';
@@ -16,14 +17,14 @@ class DailyDataController extends ChangeNotifier {
     DailyDataService? dailyData,
     LocalStorageService? storage,
     WorkoutSessionService? workoutService,
-    MyDayLocalService? myDayService,
+    MyDayRepository? myDayService,
     AuthService? auth,
     FirestoreService? firestore,
     HealthService? health,
   })  : _dailyData = dailyData ?? DailyDataService(),
         _storage = storage ?? LocalStorageService(),
         _workoutService = workoutService ?? WorkoutSessionService(),
-        _myDayService = myDayService ?? MyDayLocalService(),
+        _myDayService = myDayService ?? MyDayRepositoryFactory.create(),
       _auth = auth,
       _firestore = firestore,
       _health = health;
@@ -31,7 +32,7 @@ class DailyDataController extends ChangeNotifier {
   final DailyDataService _dailyData;
   final LocalStorageService _storage;
   final WorkoutSessionService _workoutService;
-  final MyDayLocalService _myDayService;
+  final MyDayRepository _myDayService;
   AuthService? _auth;
   FirestoreService? _firestore;
   HealthService? _health;

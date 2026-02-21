@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../models/recipe_model.dart';
-import '../../../services/recipes_local_service.dart';
+import '../../../services/recipe_repository.dart';
+import '../../../services/recipes_repository_factory.dart';
 import '../../../widgets/nutrition/recipe_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../recipe_detail_screen.dart';
@@ -14,7 +15,7 @@ class PopularRecipesTab extends StatefulWidget {
 }
 
 class _PopularRecipesTabState extends State<PopularRecipesTab> {
-  final _recipes = RecipesLocalService();
+  final RecipeRepository _recipes = RecipesRepositoryFactory.create();
 
   bool _loading = true;
   List<RecipeModel> _items = const [];

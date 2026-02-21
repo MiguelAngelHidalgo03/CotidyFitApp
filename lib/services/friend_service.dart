@@ -212,7 +212,7 @@ class FriendService {
       try {
         await _db.collection('chats').doc(pairId).update({
           'hiddenForUsers': FieldValue.arrayUnion([me]),
-          'unreadCountByUser.${me}': 0,
+          'unreadCountByUser.$me': 0,
         });
       } catch (_) {
         // ignore

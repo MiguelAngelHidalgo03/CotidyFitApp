@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../models/recipe_filters.dart';
 import '../../../models/recipe_model.dart';
-import '../../../services/recipes_local_service.dart';
+import '../../../services/recipe_repository.dart';
+import '../../../services/recipes_repository_factory.dart';
 import '../../../widgets/nutrition/recipe_card.dart';
 import '../../../widgets/nutrition/recipe_compact_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
@@ -18,7 +19,7 @@ class ExploreRecipesTab extends StatefulWidget {
 }
 
 class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
-  final _recipes = RecipesLocalService();
+  final RecipeRepository _recipes = RecipesRepositoryFactory.create();
 
   List<RecipeModel> _all = const [];
   bool _loading = true;

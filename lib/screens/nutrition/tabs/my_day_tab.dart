@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../../../core/theme.dart';
 import '../../../models/custom_meal_model.dart';
 import '../../../models/my_day_entry_model.dart';
 import '../../../models/recipe_model.dart';
 import '../../../services/daily_data_service.dart';
-import '../../../services/my_day_local_service.dart';
-import '../../../services/recipes_local_service.dart';
+import '../../../services/my_day_ingredient_check_local_service.dart';
+import '../../../services/my_day_repository.dart';
+import '../../../services/my_day_repository_factory.dart';
+import '../../../services/recipe_repository.dart';
+import '../../../services/recipes_repository_factory.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../recipe_detail_screen.dart';
 import '../widgets/custom_meal_bottom_sheet.dart';
+import '../widgets/ingredient_check_bottom_sheet.dart';
 
 class MyDayTab extends StatefulWidget {
   const MyDayTab({super.key});
@@ -19,9 +25,10 @@ class MyDayTab extends StatefulWidget {
 }
 
 class _MyDayTabState extends State<MyDayTab> {
-  final _myDay = MyDayLocalService();
-  final _recipes = RecipesLocalService();
+  final MyDayRepository _myDay = MyDayRepositoryFactory.create();
+  final RecipeRepository _recipes = RecipesRepositoryFactory.create();
   final _dailyData = DailyDataService();
+  final _ingredientChecks = MyDayIngredientCheckLocalService();
 
   DateTime _day = DateTime.now();
   bool _loading = true;
@@ -73,6 +80,60 @@ class _MyDayTabState extends State<MyDayTab> {
   Future<void> _remove(MyDayEntryModel e) async {
     await _myDay.remove(e.id);
     await _load();
+  }
+
+  String get _uidKey {
+    if (Firebase.apps.isEmpty) return 'anon';
+    return FirebaseAuth.instance.currentUser?.uid ?? 'anon';
+  }
+
+  Future<void> _openIngredientsForRecipe({
+    required String recipeId,
+  }) async {
+    final recipe = _recipeById[recipeId];
+    if (recipe == null) return;
+
+    final dateKey = dateKeyFromDate(_day);
+    final have = await _ingredientChecks.getHaveIngredients(
+      uidKey: _uidKey,
+      dateKey: dateKey,
+      recipeId: recipeId,
+    );
+
+    if (!mounted) return;
+
+    final labelByKey = <String, String>{};
+    for (final ing in recipe.ingredients) {
+      final key = _ingredientChecks.normalizeIngredientKey(ing.name);
+      if (key.isEmpty) continue;
+      labelByKey.putIfAbsent(key, () => ing.name.trim());
+    }
+
+    final items = [
+      for (final e in labelByKey.entries)
+        IngredientCheckItem(key: e.key, label: e.value.isEmpty ? e.key : e.value),
+    ]..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return IngredientCheckBottomSheet(
+          title: 'Ingredientes · ${recipe.name}',
+          items: items,
+          initialHaveKeys: have,
+          onChanged: (next) async {
+            await _ingredientChecks.setHaveIngredients(
+              uidKey: _uidKey,
+              dateKey: dateKey,
+              recipeId: recipeId,
+              haveKeys: next,
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _addCustomMeal() async {
@@ -189,6 +250,11 @@ class _MyDayTabState extends State<MyDayTab> {
                           _recipeById[e.recipeId]?.name ?? 'Receta',
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
                         ),
+                      ),
+                      IconButton(
+                        tooltip: 'Ingredientes',
+                        onPressed: () => _openIngredientsForRecipe(recipeId: e.recipeId),
+                        icon: const Icon(Icons.checklist_outlined, color: CFColors.textSecondary),
                       ),
                       IconButton(
                         tooltip: 'Abrir',
