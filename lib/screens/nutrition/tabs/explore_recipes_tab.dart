@@ -33,13 +33,21 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final items = await _recipes.getAllRecipes();
     if (!mounted) return;
-    setState(() {
-      _all = items;
-      _loading = false;
-    });
+    setState(() => _loading = true);
+    try {
+      final items = await _recipes
+          .getAllRecipes()
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      setState(() => _all = items);
+    } catch (e) {
+      if (!mounted) return;
+      // Keep previous data if available; just stop loading.
+      debugPrint('ExploreRecipesTab._load error: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   List<RecipeModel> get _filteredBase {

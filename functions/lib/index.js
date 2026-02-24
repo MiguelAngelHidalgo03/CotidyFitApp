@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
+exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 if (admin.apps.length === 0) {
@@ -354,4 +354,64 @@ exports.onTemplateRatingWrite = functions.firestore
             updated_at: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
     });
+});
+// ── Recipe likes aggregate ─────────────────────────────────────────────
+exports.onRecipeLikeWrite = functions.firestore
+    .document('recipe_likes/{likeId}')
+    .onWrite(async (change) => {
+    const beforeExists = change.before.exists;
+    const afterExists = change.after.exists;
+    if (beforeExists === afterExists)
+        return;
+    const before = (beforeExists ? change.before.data() : undefined) ?? {};
+    const after = (afterExists ? change.after.data() : undefined) ?? {};
+    const recipeId = ((after.recipe_id ?? before.recipe_id) ?? '').toString().trim();
+    if (recipeId.length === 0)
+        return;
+    const delta = afterExists && !beforeExists ? 1 : !afterExists && beforeExists ? -1 : 0;
+    if (delta === 0)
+        return;
+    const db = admin.firestore();
+    const recipeRef = db.collection('recipes').doc(recipeId);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(recipeRef);
+        if (!snap.exists)
+            return;
+        const curRaw = snap.get('likes');
+        const cur = typeof curRaw === 'number' && Number.isFinite(curRaw) ? curRaw : 0;
+        const next = Math.max(0, Math.min(cur + delta, 1 << 30));
+        tx.set(recipeRef, { likes: next }, { merge: true });
+    });
+});
+// ── Recipe ratings aggregate ───────────────────────────────────────────
+exports.onRecipeRatingWrite = functions.firestore
+    .document('recipe_ratings/{ratingId}')
+    .onWrite(async (change) => {
+    const before = (change.before.exists ? change.before.data() : undefined) ?? {};
+    const after = (change.after.exists ? change.after.data() : undefined) ?? {};
+    const recipeId = ((after.recipe_id ?? before.recipe_id) ?? '').toString().trim();
+    if (recipeId.length === 0)
+        return;
+    const db = admin.firestore();
+    const recipeRef = db.collection('recipes').doc(recipeId);
+    const ratingsSnap = await db
+        .collection('recipe_ratings')
+        .where('recipe_id', '==', recipeId)
+        .get();
+    let sum = 0;
+    let count = 0;
+    for (const doc of ratingsSnap.docs) {
+        const raw = doc.get('rating');
+        if (typeof raw !== 'number' || !Number.isFinite(raw))
+            continue;
+        const value = Math.min(5, Math.max(1, raw));
+        sum += value;
+        count += 1;
+    }
+    const avg = count <= 0 ? 0 : sum / count;
+    await recipeRef.set({
+        ratingSum: sum,
+        ratingCount: count,
+        ratingAvg: avg,
+    }, { merge: true });
 });

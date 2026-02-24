@@ -103,6 +103,58 @@ service cloud.firestore {
       allow create, update, delete: if _isAdmin();
     }
 
+    // Recipe likes (top-level, doc id = {uid}_{recipeId})
+    match /recipe_likes/{likeId} {
+      // Use docId pattern for get – resource.data is null when the doc doesn't exist.
+      allow get: if request.auth != null
+        && likeId.matches('^' + request.auth.uid + '_.*$');
+
+      allow list: if request.auth != null && resource.data.user_id == request.auth.uid;
+
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.recipe_id is string
+        && likeId.matches('^' + request.auth.uid + '_.*$');
+
+      allow update: if false;
+
+      allow delete: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+    }
+
+    // Recipe ratings (top-level, doc id = {uid}_{recipeId})
+    match /recipe_ratings/{ratingId} {
+      allow get: if request.auth != null
+        && ratingId.matches('^' + request.auth.uid + '_.*$');
+
+      allow list: if request.auth != null && resource.data.user_id == request.auth.uid;
+
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.recipe_id is string
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && ratingId.matches('^' + request.auth.uid + '_.*$');
+
+      allow update: if request.auth != null
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.recipe_id == resource.data.recipe_id
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5;
+
+      allow delete: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+    }
+
+    // Global foods catalog (admin-editable; read-only for users)
+    match /foods/{foodId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if _isAdmin();
+    }
+
     // App configuration flags (managed outside the app).
     match /app_config/{docId} {
       allow get: if request.auth != null;
@@ -231,17 +283,19 @@ service cloud.firestore {
     // --- Nutrition templates (dynamic Plantillas) ---
     match /templates/{templateId} {
       allow get, list: if request.auth != null;
-      // Only server-side (Admin SDK / Cloud Functions) should write aggregate fields.
-      allow create, update, delete: if false;
+      // Admin can create/update/delete via admin panel.
+      // Cloud Functions also write aggregate fields (total_likes, avg_rating, etc.).
+      allow create, update, delete: if _isAdmin();
     }
 
     match /template_recipes/{docId} {
       allow get, list: if request.auth != null;
-      allow create, update, delete: if false;
+      allow create, update, delete: if _isAdmin();
     }
 
     match /template_likes/{likeId} {
-      allow get: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow get: if request.auth != null
+        && likeId.matches('^' + request.auth.uid + '_.*$');
 
       // Keep list() queryable for: where('user_id', isEqualTo: request.auth.uid)
       allow list: if request.auth != null && resource.data.user_id == request.auth.uid;
@@ -258,7 +312,8 @@ service cloud.firestore {
     }
 
     match /template_ratings/{ratingId} {
-      allow get: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow get: if request.auth != null
+        && ratingId.matches('^' + request.auth.uid + '_.*$');
 
       // Keep list() queryable for: where('user_id', isEqualTo: request.auth.uid)
       allow list: if request.auth != null && resource.data.user_id == request.auth.uid;

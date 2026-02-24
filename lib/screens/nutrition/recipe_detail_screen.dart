@@ -5,8 +5,7 @@ import '../../models/my_day_entry_model.dart';
 import '../../models/recipe_model.dart';
 import '../../services/my_day_repository.dart';
 import '../../services/my_day_repository_factory.dart';
-import '../../services/recipe_favorites_local_service.dart';
-import '../../services/recipe_ratings_local_service.dart';
+import '../../services/recipe_interactions_firestore_service.dart';
 import '../../services/recipe_repository.dart';
 import '../../services/recipes_repository_factory.dart';
 import '../../widgets/progress/progress_section_card.dart';
@@ -22,11 +21,11 @@ class RecipeDetailScreen extends StatefulWidget {
 
 class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final RecipeRepository _recipes = RecipesRepositoryFactory.create();
-  final _favorites = RecipeFavoritesLocalService();
-  final _ratings = RecipeRatingsLocalService();
+  final _interactions = RecipeInteractionsFirestoreService();
   final MyDayRepository _myDay = MyDayRepositoryFactory.create();
 
   bool _loading = true;
+  String? _error;
   RecipeModel? _recipe;
   bool _isFavorite = false;
   double? _myRating;
@@ -38,32 +37,79 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    final r = await _recipes.getRecipeById(widget.recipeId);
-    final fav = r == null ? false : await _favorites.isFavorite(r.id);
-    final myRating = r == null ? null : await _ratings.getMyRating(r.id);
+  Future<void> _refreshAfterInteraction() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+    await _load();
+  }
 
+  Future<void> _load() async {
     if (!mounted) return;
     setState(() {
-      _recipe = r;
-      _isFavorite = fav;
-      _myRating = myRating;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+    try {
+      final rid = widget.recipeId.trim();
+      if (rid.isEmpty) {
+        if (!mounted) return;
+        setState(() => _error = 'ID de receta vacío.');
+        return;
+      }
+      final r = await _recipes
+          .getRecipeById(rid)
+          .timeout(const Duration(seconds: 10));
+      final fav = r == null
+          ? false
+          : await _interactions
+              .isLiked(recipeId: r.id)
+              .timeout(const Duration(seconds: 10));
+      final myRating = r == null
+          ? null
+          : await _interactions
+              .getMyRating(recipeId: r.id)
+              .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+      setState(() {
+        _recipe = r;
+        _isFavorite = fav;
+        _myRating = myRating;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Error al cargar receta: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _toggleFavorite() async {
     final r = _recipe;
     if (r == null) return;
-    final nowFav = await _favorites.toggleFavorite(r.id);
-    if (!mounted) return;
-    setState(() => _isFavorite = nowFav);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(nowFav ? 'Añadida a Favoritas' : 'Quitada de Favoritas'),
-      ),
-    );
+    if (_interactions.currentUid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para dar like.')),
+      );
+      return;
+    }
+    try {
+      final nowFav = await _interactions.toggleLike(recipeId: r.id);
+      if (!mounted) return;
+      setState(() => _isFavorite = nowFav);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(nowFav ? 'Añadida a Favoritas' : 'Quitada de Favoritas'),
+        ),
+      );
+      await _refreshAfterInteraction();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo guardar el like: $e')),
+      );
+    }
   }
 
   Future<void> _rate() async {
@@ -113,12 +159,27 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
     if (ok != true) return;
 
-    await _ratings.setMyRating(r.id, value);
-    if (!mounted) return;
-    setState(() => _myRating = value);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Puntuación guardada (local).')),
-    );
+    if (_interactions.currentUid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para valorar.')),
+      );
+      return;
+    }
+    try {
+      await _interactions.setRating(recipeId: r.id, rating: value);
+      if (!mounted) return;
+      setState(() => _myRating = value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Puntuación guardada.')),
+      );
+      await _refreshAfterInteraction();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo guardar la puntuación: $e')),
+      );
+    }
   }
 
   Future<void> _addToMyDay() async {
@@ -223,7 +284,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Añadida a Mi día (local).')));
+    ).showSnackBar(const SnackBar(content: Text('Añadida a Mi día.')));
   }
 
   @override
@@ -231,6 +292,33 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     if (_loading) {
       return const Scaffold(
         body: SafeArea(child: Center(child: CircularProgressIndicator())),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Receta')),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: CFColors.textSecondary),
+                  const SizedBox(height: 12),
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       );
     }
 

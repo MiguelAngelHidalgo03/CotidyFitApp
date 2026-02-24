@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../../../core/theme.dart';
 import '../../../models/custom_meal_model.dart';
+import '../../../models/food_model.dart';
 import '../../../models/recipe_model.dart';
+import '../../../services/custom_foods_firestore_service.dart';
+import '../../../services/foods_firestore_service.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 
 class FoodPreset {
@@ -50,19 +55,6 @@ class CustomMealBottomSheet extends StatefulWidget {
   });
 
   final MealType initialMealType;
-
-  static const List<FoodPreset> presets = [
-    FoodPreset(name: 'Pechuga de pollo', kcalPer100g: 165, proteinPer100g: 31, carbsPer100g: 0, fatPer100g: 4),
-    FoodPreset(name: 'Atún al natural', kcalPer100g: 116, proteinPer100g: 26, carbsPer100g: 0, fatPer100g: 1),
-    FoodPreset(name: 'Huevo', kcalPer100g: 143, proteinPer100g: 13, carbsPer100g: 1, fatPer100g: 10),
-    FoodPreset(name: 'Arroz cocido', kcalPer100g: 130, proteinPer100g: 3, carbsPer100g: 28, fatPer100g: 0),
-    FoodPreset(name: 'Avena', kcalPer100g: 389, proteinPer100g: 17, carbsPer100g: 66, fatPer100g: 7),
-    FoodPreset(name: 'Yogur griego', kcalPer100g: 97, proteinPer100g: 10, carbsPer100g: 4, fatPer100g: 5),
-    FoodPreset(name: 'Plátano', kcalPer100g: 89, proteinPer100g: 1, carbsPer100g: 23, fatPer100g: 0),
-    FoodPreset(name: 'Lentejas cocidas', kcalPer100g: 116, proteinPer100g: 9, carbsPer100g: 20, fatPer100g: 0),
-    FoodPreset(name: 'Aceite de oliva', kcalPer100g: 884, proteinPer100g: 0, carbsPer100g: 0, fatPer100g: 100),
-    FoodPreset(name: 'Pan integral', kcalPer100g: 247, proteinPer100g: 13, carbsPer100g: 41, fatPer100g: 4),
-  ];
 
   @override
   State<CustomMealBottomSheet> createState() => _CustomMealBottomSheetState();
@@ -334,11 +326,116 @@ class _PresetPickerSheet extends StatefulWidget {
 
 class _PresetPickerSheetState extends State<_PresetPickerSheet> {
   String _q = '';
+  List<FoodPreset>? _allFoods;
+  bool _loading = true;
+
+  final _globalFoodsService = FoodsFirestoreService();
+  final _customFoodsService = CustomFoodsFirestoreService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFoods();
+  }
+
+  Future<void> _loadFoods() async {
+    // Guard: skip Firestore when not authenticated.
+    if (Firebase.apps.isEmpty ||
+        FirebaseAuth.instance.currentUser == null) {
+      if (!mounted) return;
+      setState(() {
+        _allFoods = const [];
+        _loading = false;
+      });
+      return;
+    }
+
+    try {
+      final globalFoods = await _globalFoodsService
+          .getAllFoods()
+          .timeout(const Duration(seconds: 10));
+
+      List<FoodModel> customFoods = const [];
+      try {
+        customFoods = await _customFoodsService
+            .getAll()
+            .timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('_PresetPickerSheet: custom foods error (ignored): $e');
+      }
+
+      final fromFirestore = <FoodPreset>[
+        for (final f in globalFoods)
+          FoodPreset(
+            name: f.name,
+            kcalPer100g: f.kcalPer100g,
+            proteinPer100g: f.proteinPer100g,
+            carbsPer100g: f.carbsPer100g,
+            fatPer100g: f.fatPer100g,
+          ),
+        for (final f in customFoods)
+          FoodPreset(
+            name: '\u2605 ${f.name}',
+            kcalPer100g: f.kcalPer100g,
+            proteinPer100g: f.proteinPer100g,
+            carbsPer100g: f.carbsPer100g,
+            fatPer100g: f.fatPer100g,
+          ),
+      ];
+
+      if (!mounted) return;
+
+      setState(() {
+        _allFoods = fromFirestore;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('_PresetPickerSheet._loadFoods error: $e');
+      setState(() {
+        _allFoods = const [];
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _createCustomFood() async {
+    final result = await showDialog<FoodModel>(
+      context: context,
+      builder: (context) => const _CreateCustomFoodDialog(),
+    );
+
+    if (!mounted || result == null) return;
+
+    try {
+      // Save to Firestore
+      await _customFoodsService.add(result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al guardar alimento: $e')),
+      );
+      // Still let user pick it even if save fails
+    }
+
+    // Add directly to list so user can pick it immediately
+    final preset = FoodPreset(
+      name: '\u2605 ${result.name}',
+      kcalPer100g: result.kcalPer100g,
+      proteinPer100g: result.proteinPer100g,
+      carbsPer100g: result.carbsPer100g,
+      fatPer100g: result.fatPer100g,
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pop(preset);
+  }
 
   @override
   Widget build(BuildContext context) {
     final q = _q.trim().toLowerCase();
-    final list = CustomMealBottomSheet.presets
+    final foods = _allFoods ?? const <FoodPreset>[];
+    final list = foods
         .where((p) => q.isEmpty || p.name.toLowerCase().contains(q))
         .toList();
 
@@ -373,6 +470,33 @@ class _PresetPickerSheetState extends State<_PresetPickerSheet> {
                 onChanged: (v) => setState(() => _q = v),
               ),
               const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _createCustomFood,
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('Crear alimento personalizado'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (list.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Text(
+                      _q.isEmpty
+                          ? 'No hay alimentos en la base de datos.\nCrea uno personalizado.'
+                          : 'Sin resultados para "$_q".',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              else
               Flexible(
                 child: ListView.separated(
                   shrinkWrap: true,
@@ -463,6 +587,117 @@ class _GramsDialogState extends State<_GramsDialog> {
             Navigator.of(context).pop(v);
           },
           child: const Text('Añadir'),
+        ),
+      ],
+    );
+  }
+}
+
+class _CreateCustomFoodDialog extends StatefulWidget {
+  const _CreateCustomFoodDialog();
+
+  @override
+  State<_CreateCustomFoodDialog> createState() => _CreateCustomFoodDialogState();
+}
+
+class _CreateCustomFoodDialogState extends State<_CreateCustomFoodDialog> {
+  final _nameCtrl = TextEditingController();
+  final _kcalCtrl = TextEditingController();
+  final _proteinCtrl = TextEditingController();
+  final _carbsCtrl = TextEditingController();
+  final _fatCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _kcalCtrl.dispose();
+    _proteinCtrl.dispose();
+    _carbsCtrl.dispose();
+    _fatCtrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Introduce un nombre.')),
+      );
+      return;
+    }
+    final kcal = int.tryParse(_kcalCtrl.text.trim());
+    final protein = int.tryParse(_proteinCtrl.text.trim());
+    final carbs = int.tryParse(_carbsCtrl.text.trim());
+    final fat = int.tryParse(_fatCtrl.text.trim());
+    if (kcal == null || protein == null || carbs == null || fat == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rellena todos los campos numéricos.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(FoodModel(
+      id: '',
+      name: name,
+      kcalPer100g: kcal,
+      proteinPer100g: protein,
+      carbsPer100g: carbs,
+      fatPer100g: fat,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nuevo alimento'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: 'Nombre'),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Valores por 100 g',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _kcalCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Kcal'),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _proteinCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Proteína (g)'),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _carbsCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Carbohidratos (g)'),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _fatCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Grasas (g)'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Guardar'),
         ),
       ],
     );

@@ -30,15 +30,12 @@ class NutritionTemplatesFirestoreService {
       Firebase.apps.isEmpty ? null : _auth.currentUser?.uid;
 
   Stream<List<NutritionTemplateModel>> watchTemplates({int limit = 50}) {
-    if (Firebase.apps.isEmpty) {
+    if (Firebase.apps.isEmpty || currentUid == null) {
       return const Stream<List<NutritionTemplateModel>>.empty();
     }
 
     return _db
         .collection('templates')
-        .orderBy('total_likes', descending: true)
-        .orderBy('avg_rating', descending: true)
-        .orderBy('created_at', descending: true)
         .limit(limit.clamp(1, 200))
         .snapshots()
         .map((qs) {
@@ -47,6 +44,13 @@ class NutritionTemplatesFirestoreService {
             final m = NutritionTemplateModel.fromFirestore(doc);
             if (m != null) out.add(m);
           }
+          out.sort((a, b) {
+            final likes = b.totalLikes.compareTo(a.totalLikes);
+            if (likes != 0) return likes;
+            final rating = b.avgRating.compareTo(a.avgRating);
+            if (rating != 0) return rating;
+            return b.createdAtMs.compareTo(a.createdAtMs);
+          });
           return out;
         });
   }

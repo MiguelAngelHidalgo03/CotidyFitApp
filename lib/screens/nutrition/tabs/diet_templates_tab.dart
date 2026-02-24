@@ -3,16 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../../../core/theme.dart';
-import '../../../models/diet_template_model.dart';
 import '../../../models/nutrition_template_model.dart';
 import '../../../models/price_tier.dart';
-import '../../../services/diet_template_selection_local_service.dart';
-import '../../../services/diet_templates_local_service.dart';
-import '../../../services/diet_templates_repository.dart';
 import '../../../services/nutrition_templates_firestore_service.dart';
-import '../../../widgets/nutrition/diet_template_card.dart';
 import '../../../widgets/nutrition/nutrition_template_card.dart';
-import '../../../widgets/nutrition/premium_personalized_diet_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../widgets/template_detail_bottom_sheet.dart';
 
@@ -24,44 +18,11 @@ class DietTemplatesTab extends StatefulWidget {
 }
 
 class _DietTemplatesTabState extends State<DietTemplatesTab> {
-  final DietTemplatesRepository _repo = DietTemplatesLocalService();
-  final _selection = DietTemplateSelectionLocalService();
   final _templatesDb = NutritionTemplatesFirestoreService();
 
-  bool _loading = true;
-  List<DietTemplateModel> _templates = const [];
-  String? _selectedId;
   Set<PriceTier> _priceTiers = const {};
-
   Set<String> _dietTypes = const {};
   Set<String> _goalTags = const {};
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    final templates = await _repo.getTemplates();
-    final selected = await _selection.getSelectedTemplateId();
-    if (!mounted) return;
-    setState(() {
-      _templates = templates;
-      _selectedId = selected;
-      _loading = false;
-    });
-  }
-
-  Future<void> _useTemplate(DietTemplateModel template) async {
-    await _selection.setSelectedTemplateId(template.id);
-    if (!mounted) return;
-    setState(() => _selectedId = template.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Plantilla seleccionada: ${template.kind.label}')),
-    );
-  }
 
   void _togglePriceTier(PriceTier v) {
     setState(() {
@@ -89,15 +50,8 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final list = _priceTiers.isEmpty
-        ? _templates
-        : _templates.where((t) => _priceTiers.contains(t.priceTier)).toList();
-
-    final firebaseReady = Firebase.apps.isNotEmpty;
+    final firebaseReady =
+        Firebase.apps.isNotEmpty && FirebaseAuth.instance.currentUser != null;
     final currentUser = firebaseReady ? FirebaseAuth.instance.currentUser : null;
 
     return ListView(
@@ -246,6 +200,19 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
           StreamBuilder<List<NutritionTemplateModel>>(
             stream: _templatesDb.watchTemplates(limit: 60),
             builder: (context, snap) {
+              if (snap.hasError) {
+                return ProgressSectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Error', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 8),
+                      Text('Error al cargar plantillas: ${snap.error}'),
+                    ],
+                  ),
+                );
+              }
+
               if (snap.connectionState == ConnectionState.waiting) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
@@ -332,28 +299,10 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
           const SizedBox(height: 6),
         ],
 
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
-          child: Text(
-            'Plantillas rápidas',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+        if (!firebaseReady)
+          const ProgressSectionCard(
+            child: Text('Inicia sesión para ver las plantillas.'),
           ),
-        ),
-        for (final t in list) ...[
-          DietTemplateCard(
-            template: t,
-            onUseTemplate: () => _useTemplate(t),
-          ),
-          const SizedBox(height: 12),
-        ],
-        PremiumPersonalizedDietCard(
-          onCta: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Premium: próximamente')),
-            );
-          },
-        ),
-        if (_selectedId != null) const SizedBox(height: 4),
       ],
     );
   }

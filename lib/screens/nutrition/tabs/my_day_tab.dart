@@ -12,6 +12,7 @@ import '../../../services/my_day_repository.dart';
 import '../../../services/my_day_repository_factory.dart';
 import '../../../services/recipe_repository.dart';
 import '../../../services/recipes_repository_factory.dart';
+import '../../../services/saved_custom_meals_service.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../recipe_detail_screen.dart';
 import '../widgets/custom_meal_bottom_sheet.dart';
@@ -29,12 +30,14 @@ class _MyDayTabState extends State<MyDayTab> {
   final RecipeRepository _recipes = RecipesRepositoryFactory.create();
   final _dailyData = DailyDataService();
   final _ingredientChecks = MyDayIngredientCheckLocalService();
+  final _savedMealsService = SavedCustomMealsService();
 
   DateTime _day = DateTime.now();
   bool _loading = true;
   List<MyDayEntryModel> _entries = const [];
   List<CustomMealEntryModel> _customMeals = const [];
   Map<String, RecipeModel> _recipeById = const {};
+  List<CustomMealModel> _savedMeals = const [];
 
   @override
   void initState() {
@@ -43,21 +46,39 @@ class _MyDayTabState extends State<MyDayTab> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final entries = await _myDay.getForDate(_day);
-    final all = await _recipes.getAllRecipes();
-    final map = {for (final r in all) r.id: r};
-
-    final dateKey = dateKeyFromDate(_day);
-    final daily = await _dailyData.getForDateKey(dateKey);
-
     if (!mounted) return;
-    setState(() {
-      _entries = entries;
-      _customMeals = daily.customMeals;
-      _recipeById = map;
-      _loading = false;
-    });
+    setState(() => _loading = true);
+    try {
+      final entries = await _myDay
+          .getForDate(_day)
+          .timeout(const Duration(seconds: 10));
+      final all = await _recipes
+          .getAllRecipes()
+          .timeout(const Duration(seconds: 10));
+      final map = {for (final r in all) r.id: r};
+
+      final dateKey = dateKeyFromDate(_day);
+      final daily = await _dailyData
+          .getForDateKey(dateKey)
+          .timeout(const Duration(seconds: 10));
+
+      final savedMeals = await _savedMealsService
+          .getAll()
+          .timeout(const Duration(seconds: 5));
+
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _customMeals = daily.customMeals;
+        _recipeById = map;
+        _savedMeals = savedMeals;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('MyDayTab._load error: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _pickDay() async {
@@ -155,10 +176,179 @@ class _MyDayTabState extends State<MyDayTab> {
     await _load();
   }
 
+  Future<void> _saveCustomMealForFuture(CustomMealModel meal) async {
+    await _savedMealsService.save(meal);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Guardada para futuro: ${meal.nombre}')),
+    );
+    await _load();
+  }
+
   Future<void> _removeCustomMeal(CustomMealEntryModel e) async {
     final dateKey = dateKeyFromDate(_day);
     await _dailyData.removeCustomMeal(dateKey: dateKey, entryId: e.id);
     await _load();
+  }
+
+  Future<void> _reuseSavedMeal(CustomMealModel meal) async {
+    final mealType = await showDialog<MealType>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('¿En qué comida?'),
+        children: [
+          for (final m in MealType.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(m),
+              child: Text(m.label),
+            ),
+        ],
+      ),
+    );
+    if (mealType == null) return;
+
+    final dateKey = dateKeyFromDate(_day);
+    // Give a fresh id so it's a new entry
+    final freshMeal = CustomMealModel(
+      id: 'm_${DateTime.now().millisecondsSinceEpoch}',
+      nombre: meal.nombre,
+      listaAlimentos: meal.listaAlimentos,
+      calorias: meal.calorias,
+      proteinas: meal.proteinas,
+      carbohidratos: meal.carbohidratos,
+      grasas: meal.grasas,
+    );
+    await _dailyData.addCustomMeal(
+      dateKey: dateKey,
+      mealType: mealType,
+      meal: freshMeal,
+    );
+    await _load();
+  }
+
+  Future<void> _openSavedMealsPicker() async {
+    if (!mounted) return;
+
+    String q = '';
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: 16 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            child: ProgressSectionCard(
+              padding: const EdgeInsets.all(16),
+              child: StatefulBuilder(
+                builder: (context, setModalState) {
+                  final query = q.trim().toLowerCase();
+                  final filtered = _savedMeals
+                      .where((m) => query.isEmpty || m.nombre.toLowerCase().contains(query))
+                      .toList();
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Recetas personalizadas',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Buscar por nombre…',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (v) => setModalState(() => q = v),
+                      ),
+                      const SizedBox(height: 12),
+                      if (filtered.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Text(
+                            query.isEmpty
+                                ? 'No tienes recetas personalizadas guardadas todavía.'
+                                : 'Sin resultados para "$query".',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, _) => const SizedBox(height: 8),
+                            itemBuilder: (context, i) {
+                              final meal = filtered[i];
+                              return ProgressSectionCard(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.bookmark_outline, color: CFColors.primary),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            meal.nombre,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(fontWeight: FontWeight.w900),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${meal.calorias} kcal · P ${meal.proteinas}g · C ${meal.carbohidratos}g · G ${meal.grasas}g',
+                                            style: Theme.of(context).textTheme.bodyMedium,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () async {
+                                        Navigator.of(context).pop();
+                                        await _reuseSavedMeal(meal);
+                                      },
+                                      child: const Text('Usar hoy'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -221,6 +411,26 @@ class _MyDayTabState extends State<MyDayTab> {
             ),
           ),
           const SizedBox(height: 12),
+          ProgressSectionCard(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                const Icon(Icons.bookmark_outline, color: CFColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Recetas personalizadas (${_savedMeals.length})',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: _openSavedMealsPicker,
+                  child: const Text('Abrir'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           if (!hasAny)
             ProgressSectionCard(
               child: Column(
@@ -246,9 +456,16 @@ class _MyDayTabState extends State<MyDayTab> {
                       const Icon(Icons.restaurant, color: CFColors.primary),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          _recipeById[e.recipeId]?.name ?? 'Receta',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
+                        child: InkWell(
+                          onTap: () => _openRecipe(e.recipeId),
+                          borderRadius: const BorderRadius.all(Radius.circular(8)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Text(
+                              _recipeById[e.recipeId]?.name ?? 'Receta',
+                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
                         ),
                       ),
                       IconButton(
@@ -293,6 +510,11 @@ class _MyDayTabState extends State<MyDayTab> {
                             ),
                           ],
                         ),
+                      ),
+                      IconButton(
+                        tooltip: 'Guardar para futuro',
+                        onPressed: () => _saveCustomMealForFuture(e.meal),
+                        icon: const Icon(Icons.bookmark_add_outlined, color: CFColors.primary),
                       ),
                       IconButton(
                         tooltip: 'Quitar',

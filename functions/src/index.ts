@@ -32,6 +32,17 @@ type TemplateRatingDoc = {
   rating?: number;
 };
 
+type RecipeLikeDoc = {
+  user_id?: string;
+  recipe_id?: string;
+};
+
+type RecipeRatingDoc = {
+  user_id?: string;
+  recipe_id?: string;
+  rating?: number;
+};
+
 function chunk<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items];
   const out: T[][] = [];
@@ -415,4 +426,81 @@ export const onTemplateRatingWrite = functions.firestore
         { merge: true }
       );
     });
+  });
+
+// ── Recipe likes aggregate ─────────────────────────────────────────────
+export const onRecipeLikeWrite = functions.firestore
+  .document('recipe_likes/{likeId}')
+  .onWrite(async (change) => {
+    const beforeExists = change.before.exists;
+    const afterExists = change.after.exists;
+
+    if (beforeExists === afterExists) return;
+
+    const before = (beforeExists ? (change.before.data() as RecipeLikeDoc) : undefined) ?? {};
+    const after = (afterExists ? (change.after.data() as RecipeLikeDoc) : undefined) ?? {};
+
+    const recipeId = ((after.recipe_id ?? before.recipe_id) ?? '').toString().trim();
+    if (recipeId.length === 0) return;
+
+    const delta = afterExists && !beforeExists ? 1 : !afterExists && beforeExists ? -1 : 0;
+    if (delta === 0) return;
+
+    const db = admin.firestore();
+    const recipeRef = db.collection('recipes').doc(recipeId);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(recipeRef);
+      if (!snap.exists) return;
+
+      const curRaw = snap.get('likes') as unknown;
+      const cur = typeof curRaw === 'number' && Number.isFinite(curRaw) ? curRaw : 0;
+      const next = Math.max(0, Math.min(cur + delta, 1 << 30));
+
+      tx.set(
+        recipeRef,
+        { likes: next },
+        { merge: true }
+      );
+    });
+  });
+
+// ── Recipe ratings aggregate ───────────────────────────────────────────
+export const onRecipeRatingWrite = functions.firestore
+  .document('recipe_ratings/{ratingId}')
+  .onWrite(async (change) => {
+    const before = (change.before.exists ? (change.before.data() as RecipeRatingDoc) : undefined) ?? {};
+    const after = (change.after.exists ? (change.after.data() as RecipeRatingDoc) : undefined) ?? {};
+
+    const recipeId = ((after.recipe_id ?? before.recipe_id) ?? '').toString().trim();
+    if (recipeId.length === 0) return;
+
+    const db = admin.firestore();
+    const recipeRef = db.collection('recipes').doc(recipeId);
+
+    const ratingsSnap = await db
+      .collection('recipe_ratings')
+      .where('recipe_id', '==', recipeId)
+      .get();
+
+    let sum = 0;
+    let count = 0;
+    for (const doc of ratingsSnap.docs) {
+      const raw = doc.get('rating') as unknown;
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+      const value = Math.min(5, Math.max(1, raw));
+      sum += value;
+      count += 1;
+    }
+
+    const avg = count <= 0 ? 0 : sum / count;
+
+    await recipeRef.set(
+      {
+        ratingSum: sum,
+        ratingCount: count,
+        ratingAvg: avg,
+      },
+      { merge: true }
+    );
   });

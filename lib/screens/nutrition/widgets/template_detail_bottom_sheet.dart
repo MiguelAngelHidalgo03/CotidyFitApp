@@ -319,12 +319,19 @@ class _TemplateDetailBottomSheetState extends State<TemplateDetailBottomSheet> {
                                   const Icon(Icons.restaurant, color: CFColors.primary),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text(
-                                      data.recipeById[link.recipeId]?.name ?? 'Receta',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyLarge
-                                          ?.copyWith(fontWeight: FontWeight.w800),
+                                    child: InkWell(
+                                      onTap: () => _openRecipe(link.recipeId),
+                                      borderRadius: const BorderRadius.all(Radius.circular(8)),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 6),
+                                        child: Text(
+                                          data.recipeById[link.recipeId]?.name ?? 'Receta',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge
+                                              ?.copyWith(fontWeight: FontWeight.w800),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   IconButton(

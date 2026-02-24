@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'nutrition/tabs/diet_templates_tab.dart';
 import 'nutrition/tabs/explore_recipes_tab.dart';
-import 'nutrition/tabs/favorites_recipes_tab.dart';
 import 'nutrition/tabs/my_day_tab.dart';
+import 'nutrition/tabs/nutrition_favorites_tab.dart';
 
 class NutritionScreen extends StatelessWidget {
   const NutritionScreen({super.key});
@@ -17,10 +17,11 @@ class NutritionScreen extends StatelessWidget {
           toolbarHeight: 0,
           bottom: const TabBar(
             isScrollable: true,
+            tabAlignment: TabAlignment.center,
             tabs: [
               Tab(text: 'Plantillas'),
               Tab(text: 'Explorar recetas'),
-              Tab(text: 'Recetas favoritas'),
+              Tab(text: 'Favoritos'),
               Tab(text: 'Mi día'),
             ],
           ),
@@ -29,7 +30,7 @@ class NutritionScreen extends StatelessWidget {
           children: [
             DietTemplatesTab(),
             ExploreRecipesTab(),
-            FavoritesRecipesTab(),
+            NutritionFavoritesTab(),
             MyDayTab(),
           ],
         ),

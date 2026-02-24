@@ -285,18 +285,32 @@ class RecipeModel {
       };
 
   static RecipeModel? fromJson(Map<String, dynamic> json) {
+    Object? readAny(List<String> keys) {
+      for (final k in keys) {
+        if (json.containsKey(k)) return json[k];
+      }
+      return null;
+    }
+
+    num? readNum(List<String> keys) {
+      final v = readAny(keys);
+      if (v is num) return v;
+      if (v is String) return num.tryParse(v);
+      return null;
+    }
+
     final id = json['id'];
     final name = json['name'];
     final country = json['country'];
-    final priceTierRaw = json['priceTier'];
-    final ratingAvg = json['ratingAvg'];
-    final ratingCount = json['ratingCount'];
-    final likes = json['likes'];
-    final kcalPerServing = json['kcalPerServing'];
-    final gramsPerServing = json['gramsPerServing'];
-    final servings = json['servings'];
-    final durationMinutes = json['durationMinutes'];
-    final macros = json['macrosPerServing'];
+    final priceTierRaw = readAny(['priceTier', 'price_tier', 'price_level']);
+    final ratingAvg = readNum(['ratingAvg', 'avg_rating']);
+    final ratingCount = readNum(['ratingCount', 'rating_count']);
+    final likes = readNum(['likes', 'total_likes']);
+    final kcalPerServing = readNum(['kcalPerServing', 'kcal_per_serving']);
+    final gramsPerServing = readNum(['gramsPerServing', 'grams_per_serving']);
+    final servings = readNum(['servings']);
+    final durationMinutes = readNum(['durationMinutes', 'duration_minutes']);
+    final macros = readAny(['macrosPerServing', 'macros_per_serving']);
 
     if (id is! String || id.trim().isEmpty) return null;
     if (name is! String || name.trim().isEmpty) return null;
@@ -314,9 +328,16 @@ class RecipeModel {
     final macrosObj = RecipeMacros.fromJson(macrosCasted);
     if (macrosObj == null) return null;
 
-    final priceTier = priceTierRaw is String
-      ? PriceTier.values.where((e) => e.name == priceTierRaw).cast<PriceTier?>().firstOrNull
-      : null;
+    final priceTier = switch ((priceTierRaw?.toString().trim().toLowerCase() ?? '')) {
+      'economical' || 'economico' || 'low' => PriceTier.economical,
+      'high' || 'alto' => PriceTier.high,
+      'medium' || 'medio' => PriceTier.medium,
+      _ => PriceTier.values
+              .where((e) => e.name == priceTierRaw)
+              .cast<PriceTier?>()
+              .firstOrNull ??
+          PriceTier.medium,
+    };
 
     List<T> parseEnumList<T extends Enum>(
       Object? raw,
@@ -380,7 +401,7 @@ class RecipeModel {
       id: id,
       name: name,
       country: country,
-      priceTier: priceTier ?? PriceTier.medium,
+      priceTier: priceTier,
       ratingAvg: ratingAvg.toDouble(),
       ratingCount: ratingCount.toInt(),
       likes: likes.toInt(),

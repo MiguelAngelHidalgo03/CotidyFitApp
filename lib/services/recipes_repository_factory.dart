@@ -1,6 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/recipe_model.dart';
 import 'recipe_repository.dart';
@@ -25,38 +24,10 @@ class _HybridRecipesRepository implements RecipeRepository {
   final RecipesFirestoreService remote;
   final RecipesLocalService local;
 
-  bool? _remoteEnabled;
-  Future<bool>? _remoteEnabledFuture;
-
   Future<bool> _isRemoteEnabled() async {
-    final cached = _remoteEnabled;
-    if (cached != null) return cached;
-
-    final existing = _remoteEnabledFuture;
-    if (existing != null) return existing;
-
-    final f = () async {
-      try {
-        if (Firebase.apps.isEmpty) return false;
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return false;
-
-        final snap = await FirebaseFirestore.instance
-            .collection('app_config')
-            .doc('recipes')
-            .get();
-        final enabled = snap.data()?['enabled'];
-        final v = enabled == true;
-        _remoteEnabled = v;
-        return v;
-      } catch (_) {
-        _remoteEnabled = false;
-        return false;
-      }
-    }();
-
-    _remoteEnabledFuture = f;
-    return f;
+    if (Firebase.apps.isEmpty) return false;
+    final user = FirebaseAuth.instance.currentUser;
+    return user != null;
   }
 
   @override
