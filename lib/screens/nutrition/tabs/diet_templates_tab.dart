@@ -5,7 +5,11 @@ import 'package:firebase_core/firebase_core.dart';
 import '../../../core/theme.dart';
 import '../../../models/nutrition_template_model.dart';
 import '../../../models/price_tier.dart';
+import '../../../models/user_profile.dart';
 import '../../../services/nutrition_templates_firestore_service.dart';
+import '../../../services/nutrition_personalization_service.dart';
+import '../../../services/profile_service.dart';
+import '../../../services/settings_service.dart';
 import '../../../widgets/nutrition/nutrition_template_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../widgets/template_detail_bottom_sheet.dart';
@@ -19,10 +23,30 @@ class DietTemplatesTab extends StatefulWidget {
 
 class _DietTemplatesTabState extends State<DietTemplatesTab> {
   final _templatesDb = NutritionTemplatesFirestoreService();
+  final _profileService = ProfileService();
+  final _settingsService = SettingsService();
 
   Set<PriceTier> _priceTiers = const {};
   Set<String> _dietTypes = const {};
   Set<String> _goalTags = const {};
+  UserProfile? _profile;
+  bool _showNutritionValues = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    final profile = await _profileService.getProfile();
+    final settings = await _settingsService.getSettings();
+    if (!mounted) return;
+    setState(() {
+      _profile = profile;
+      _showNutritionValues = settings.showNutritionValues;
+    });
+  }
 
   void _togglePriceTier(PriceTier v) {
     setState(() {
@@ -235,7 +259,12 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
                   if (!ok) return false;
                 }
                 return true;
-              }).toList();
+              }).toList()
+                ..sort((a, b) {
+                  final sb = NutritionPersonalizationService.templateRecommendationScore(_profile, b);
+                  final sa = NutritionPersonalizationService.templateRecommendationScore(_profile, a);
+                  return sb.compareTo(sa);
+                });
 
               if (filtered.isEmpty) {
                 return const ProgressSectionCard(
@@ -260,6 +289,7 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
                           template: t,
                           liked: interactions.likedTemplateIds.contains(t.id),
                           myRating: interactions.ratingByTemplateId[t.id],
+                          showNutritionValues: _showNutritionValues,
                           onTap: () => showModalBottomSheet<void>(
                             context: context,
                             isScrollControlled: true,

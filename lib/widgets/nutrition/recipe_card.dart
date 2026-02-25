@@ -10,11 +10,13 @@ class RecipeCard extends StatelessWidget {
     required this.recipe,
     required this.onTap,
     this.trailing,
+    this.showNutritionValues = true,
   });
 
   final RecipeModel recipe;
   final VoidCallback onTap;
   final Widget? trailing;
+  final bool showNutritionValues;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +58,8 @@ class RecipeCard extends StatelessWidget {
                     children: [
                       _Chip(text: recipe.country, icon: Icons.public),
                       _Chip(text: '${recipe.durationMinutes} min', icon: Icons.schedule),
-                      _Chip(text: '${recipe.kcalPerServing} kcal', icon: Icons.local_fire_department_outlined),
+                      if (showNutritionValues)
+                        _Chip(text: '${recipe.kcalPerServing} kcal', icon: Icons.local_fire_department_outlined),
                       _Chip(text: recipe.difficulty.label, icon: Icons.speed),
                     ],
                   ),

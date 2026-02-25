@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 import '../models/workout_sound_model.dart';
 import 'settings_service.dart';
@@ -8,8 +9,15 @@ class WorkoutSoundService {
     : _settings = settings ?? SettingsService();
 
   final SettingsService _settings;
+  static final AudioPlayer _player = AudioPlayer()..setReleaseMode(ReleaseMode.release);
 
   static const List<WorkoutSoundModel> availableSounds = [
+    WorkoutSoundModel(
+      id: 'training_bell',
+      nombre: 'Training bell',
+      sourceType: WorkoutSoundSourceType.asset,
+      assetPath: 'sounds/training_bell.wav',
+    ),
     WorkoutSoundModel(
       id: 'mute',
       nombre: 'Silencio',
@@ -45,12 +53,18 @@ class WorkoutSoundService {
   }
 
   Future<void> playSelectedEndSound() async {
-    final id = await getSelectedSoundId();
+    final settings = await _settings.getSettings();
+    if (!settings.workoutEndSoundEnabled) return;
+    final id = settings.workoutEndSoundId;
     await playById(id);
   }
 
   Future<void> playById(String id) async {
     switch (id) {
+      case 'training_bell':
+        await _player.stop();
+        await _player.play(AssetSource('sounds/training_bell.wav'));
+        return;
       case 'mute':
         return;
       case 'system_click':

@@ -8,6 +8,7 @@ import '../services/workout_plan_service.dart';
 import '../services/workout_service.dart';
 import '../utils/date_utils.dart';
 import '../widgets/progress/progress_section_card.dart';
+import 'workout_detail_screen.dart';
 
 class MyPlanScreen extends StatefulWidget {
   const MyPlanScreen({super.key});
@@ -17,12 +18,13 @@ class MyPlanScreen extends StatefulWidget {
 }
 
 class _MyPlanScreenState extends State<MyPlanScreen> {
-  final _workouts = const WorkoutService();
+  final _workouts = WorkoutService();
   final _plans = WorkoutPlanService();
   final _history = WorkoutHistoryService();
 
   late DateTime _weekStart;
   WeekPlan? _plan;
+  List<Workout> _allWorkouts = const [];
   Map<String, String> _completedByDate = const {};
   bool _loading = true;
 
@@ -35,11 +37,13 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    final workouts = await _workouts.refreshFromFirestore();
     final plan = await _plans.getPlanForWeekKey(DateUtilsCF.toKey(_weekStart));
     final completed = await _history.getCompletedWorkoutsByDate();
     if (!mounted) return;
     setState(() {
       _plan = plan;
+      _allWorkouts = workouts;
       _completedByDate = completed;
       _loading = false;
     });
@@ -91,7 +95,7 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
 
   Workout? _byId(String? id) {
     if (id == null) return null;
-    for (final w in _workouts.getAllWorkouts()) {
+    for (final w in _allWorkouts) {
       if (w.id == id) return w;
     }
     return null;
@@ -127,9 +131,16 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
                         dayIndex: i,
                         date: _weekStart.add(Duration(days: i)),
                         workout: _byId(plan.assignments[i]),
+                        onOpenWorkout: (w) {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => WorkoutDetailScreen(workout: w),
+                            ),
+                          );
+                        },
                         onAssign: (w) => _assign(i, w),
                         onClear: () => _clearAssignment(i),
-                        allWorkouts: _workouts.getAllWorkouts(),
+                        allWorkouts: _allWorkouts,
                       ),
                       if (i != 6) const SizedBox(height: 10),
                     ],
@@ -200,6 +211,7 @@ class _DayPlanRow extends StatelessWidget {
     required this.dayIndex,
     required this.date,
     required this.workout,
+    required this.onOpenWorkout,
     required this.onAssign,
     required this.onClear,
     required this.allWorkouts,
@@ -208,6 +220,7 @@ class _DayPlanRow extends StatelessWidget {
   final int dayIndex;
   final DateTime date;
   final Workout? workout;
+  final ValueChanged<Workout> onOpenWorkout;
   final ValueChanged<Workout> onAssign;
   final VoidCallback onClear;
   final List<Workout> allWorkouts;
@@ -256,7 +269,10 @@ class _DayPlanRow extends StatelessWidget {
                     ),
                   )
                 else
-                  _WorkoutPill(workout: workout!),
+                  _WorkoutPill(
+                    workout: workout!,
+                    onTap: () => onOpenWorkout(workout!),
+                  ),
               ],
             ),
           ),
@@ -491,38 +507,43 @@ class _DayPlanRow extends StatelessWidget {
 }
 
 class _WorkoutPill extends StatelessWidget {
-  const _WorkoutPill({required this.workout});
+  const _WorkoutPill({required this.workout, required this.onTap});
 
   final Workout workout;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: CFColors.background,
-        borderRadius: const BorderRadius.all(Radius.circular(18)),
-        border: Border.all(color: CFColors.softGray),
-        boxShadow: const [],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            workout.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${workout.durationMinutes} min · ${workout.level}',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: const BorderRadius.all(Radius.circular(18)),
+      child: Container(
+        width: 220,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: CFColors.background,
+          borderRadius: const BorderRadius.all(Radius.circular(18)),
+          border: Border.all(color: CFColors.softGray),
+          boxShadow: const [],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              workout.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${workout.durationMinutes} min · ${workout.level}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
       ),
     );
   }

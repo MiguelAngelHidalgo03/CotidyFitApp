@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
+exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 if (admin.apps.length === 0) {
@@ -414,4 +414,291 @@ exports.onRecipeRatingWrite = functions.firestore
         ratingCount: count,
         ratingAvg: avg,
     }, { merge: true });
+});
+// ── Seed sample training data (temporary utility) ─────────────────────
+exports.seedTrainingSampleData = functions.https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.status(405).json({ ok: false, error: 'Use POST' });
+        return;
+    }
+    const key = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
+    const expected = (process.env.SEED_KEY ?? 'cotidyfit-seed-2026').trim();
+    if (key !== expected) {
+        res.status(401).json({ ok: false, error: 'Unauthorized' });
+        return;
+    }
+    const db = admin.firestore();
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+    const exercises = [
+        {
+            id: 'ex_sentadilla_goblet',
+            name: 'Sentadilla Goblet',
+            description: 'Sentadilla con mancuerna al pecho para fuerza de tren inferior.',
+            muscleGroups: ['cuadriceps', 'gluteos', 'core'],
+            difficultyLevel: 'intermedio',
+            equipmentNeeded: 'gym',
+            sportCategory: 'fuerza',
+            recommendedForGoals: ['perdida_grasa', 'ganancia_muscular', 'tonificar'],
+            contraindications: ['lesionesRodilla_aguda'],
+            medicalWarnings: ['hipertension_no_controlada'],
+            variants: [
+                { name: 'Goblet ligera', description: 'Menor carga, foco en técnica.' },
+                { name: 'Tempo 3-1-1', description: 'Bajada lenta de 3 segundos.' },
+            ],
+            imageUrl: 'https://images.unsplash.com/photo-1599058917765-a780eda07a3e',
+            videoUrl: '',
+        },
+        {
+            id: 'ex_flexiones_inclinadas',
+            name: 'Flexiones inclinadas',
+            description: 'Flexiones con manos elevadas para progresión de empuje.',
+            muscleGroups: ['pecho', 'hombro', 'triceps'],
+            difficultyLevel: 'principiante',
+            equipmentNeeded: 'casa',
+            sportCategory: 'fuerza',
+            recommendedForGoals: ['tonificar', 'ganancia_muscular'],
+            contraindications: ['lesion_hombro_aguda'],
+            medicalWarnings: [],
+            variants: [
+                { name: 'Rodillas apoyadas', description: 'Reduce carga para iniciar.' },
+            ],
+            imageUrl: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+            videoUrl: '',
+        },
+        {
+            id: 'ex_plancha_frontal',
+            name: 'Plancha frontal',
+            description: 'Isométrico de core para estabilidad lumbar.',
+            muscleGroups: ['core'],
+            difficultyLevel: 'principiante',
+            equipmentNeeded: 'none',
+            sportCategory: 'movilidad',
+            recommendedForGoals: ['salud', 'tonificar'],
+            contraindications: ['dolor_lumbar_agudo'],
+            medicalWarnings: [],
+            variants: [
+                { name: 'Plancha con rodillas', description: 'Versión regresada.' },
+            ],
+            imageUrl: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5',
+            videoUrl: '',
+        },
+        {
+            id: 'ex_burpees',
+            name: 'Burpees',
+            description: 'Ejercicio HIIT de cuerpo completo.',
+            muscleGroups: ['pierna', 'pecho', 'cardio'],
+            difficultyLevel: 'avanzado',
+            equipmentNeeded: 'none',
+            sportCategory: 'hiit',
+            recommendedForGoals: ['perdida_grasa', 'cardio'],
+            contraindications: ['lesionesRodilla_aguda'],
+            medicalWarnings: ['cardiopatia_no_controlada'],
+            variants: [
+                { name: 'Sin salto', description: 'Menor impacto articular.' },
+            ],
+            imageUrl: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd',
+            videoUrl: '',
+        },
+        {
+            id: 'ex_peso_muerto_rumano_mancuernas',
+            name: 'Peso muerto rumano con mancuernas',
+            description: 'Bisagra de cadera para cadena posterior.',
+            muscleGroups: ['isquios', 'gluteos', 'espalda_baja'],
+            difficultyLevel: 'intermedio',
+            equipmentNeeded: 'gym',
+            sportCategory: 'fuerza',
+            recommendedForGoals: ['ganancia_muscular', 'tonificar'],
+            contraindications: ['dolor_lumbar_agudo'],
+            medicalWarnings: [],
+            variants: [
+                { name: 'Una mancuerna', description: 'Más accesible para casa.' },
+            ],
+            imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48',
+            videoUrl: '',
+        },
+        {
+            id: 'ex_jump_jacks',
+            name: 'Jumping Jacks',
+            description: 'Cardio básico para elevar pulso.',
+            muscleGroups: ['cardio'],
+            difficultyLevel: 'principiante',
+            equipmentNeeded: 'none',
+            sportCategory: 'cardio',
+            recommendedForGoals: ['perdida_grasa', 'cardio', 'salud'],
+            contraindications: ['lesionesRodilla_aguda'],
+            medicalWarnings: [],
+            variants: [
+                { name: 'Step jacks', description: 'Sin salto para menor impacto.' },
+            ],
+            imageUrl: 'https://images.unsplash.com/photo-1574680178050-55c6a6a96e0a',
+            videoUrl: '',
+        },
+    ];
+    const routines = [
+        {
+            id: 'rt_fullbody_casa_30',
+            data: {
+                name: 'Full Body Casa 30',
+                description: 'Rutina completa de 30 minutos para casa.',
+                difficultyLevel: 'principiante',
+                goal: 'perdida_grasa',
+                durationMinutes: 30,
+                equipmentNeeded: 'casa',
+                sportCategory: 'fuerza',
+                recommendedForGoals: ['perdida_grasa', 'salud'],
+                contraindications: ['espalda_aguda'],
+                medicalWarnings: ['embarazo_alto_riesgo'],
+                recommendedProfileTags: ['casa', 'principiante', 'perdida_grasa'],
+            },
+            exercises: [
+                { id: '01_ex_sentadilla_goblet', exerciseId: 'ex_sentadilla_goblet', sets: 3, reps: 12, restSeconds: 60, order: 1 },
+                { id: '02_ex_flexiones_inclinadas', exerciseId: 'ex_flexiones_inclinadas', sets: 3, reps: 10, restSeconds: 45, order: 2 },
+                { id: '03_ex_plancha_frontal', exerciseId: 'ex_plancha_frontal', sets: 3, reps: 30, restSeconds: 40, order: 3 },
+            ],
+        },
+        {
+            id: 'rt_hiit_quemagrasa_20',
+            data: {
+                name: 'HIIT Quema Grasa 20',
+                description: 'Sesión intensa con pausas cortas.',
+                difficultyLevel: 'avanzado',
+                goal: 'perdida_grasa',
+                durationMinutes: 20,
+                equipmentNeeded: 'none',
+                sportCategory: 'hiit',
+                recommendedForGoals: ['perdida_grasa', 'cardio'],
+                contraindications: ['lesionesRodilla_aguda'],
+                medicalWarnings: ['cardiopatia_no_controlada'],
+                recommendedProfileTags: ['avanzado', 'hiit', 'cardio'],
+            },
+            exercises: [
+                { id: '01_ex_burpees', exerciseId: 'ex_burpees', sets: 5, reps: 12, restSeconds: 30, order: 1 },
+                { id: '02_ex_jump_jacks', exerciseId: 'ex_jump_jacks', sets: 5, reps: 30, restSeconds: 20, order: 2 },
+            ],
+        },
+        {
+            id: 'rt_fuerza_gym_40',
+            data: {
+                name: 'Fuerza Gym 40',
+                description: 'Trabajo de fuerza general para gimnasio.',
+                difficultyLevel: 'intermedio',
+                goal: 'ganancia_muscular',
+                durationMinutes: 40,
+                equipmentNeeded: 'gym',
+                sportCategory: 'fuerza',
+                recommendedForGoals: ['ganancia_muscular', 'tonificar'],
+                contraindications: ['dolor_lumbar_agudo'],
+                medicalWarnings: [],
+                recommendedProfileTags: ['gym', 'fuerza', 'intermedio'],
+            },
+            exercises: [
+                { id: '01_ex_sentadilla_goblet', exerciseId: 'ex_sentadilla_goblet', sets: 4, reps: 10, restSeconds: 75, order: 1 },
+                { id: '02_ex_peso_muerto_rumano_mancuernas', exerciseId: 'ex_peso_muerto_rumano_mancuernas', sets: 4, reps: 10, restSeconds: 90, order: 2 },
+                { id: '03_ex_flexiones_inclinadas', exerciseId: 'ex_flexiones_inclinadas', sets: 3, reps: 12, restSeconds: 60, order: 3 },
+            ],
+        },
+    ];
+    const programs = [
+        {
+            id: 'pg_inicio_4s',
+            data: {
+                name: 'Inicio Fit 4 semanas',
+                description: 'Programa base para crear hábito y mejorar condición general.',
+                level: 'principiante',
+                goal: 'salud',
+                durationWeeks: 4,
+                durationMinutes: 30,
+                equipmentNeeded: 'casa',
+                recommendedProfileTags: ['principiante', 'casa', 'salud'],
+                contraindications: [],
+                medicalWarnings: [],
+            },
+            days: [
+                {
+                    id: 'lunes',
+                    data: { dayName: 'Lunes', focus: 'Full Body', order: 1 },
+                    exercises: [
+                        { id: '01_ex_sentadilla_goblet', exerciseId: 'ex_sentadilla_goblet', sets: 3, reps: 12, restSeconds: 60, order: 1 },
+                        { id: '02_ex_flexiones_inclinadas', exerciseId: 'ex_flexiones_inclinadas', sets: 3, reps: 10, restSeconds: 45, order: 2 },
+                    ],
+                },
+                {
+                    id: 'miercoles',
+                    data: { dayName: 'Miércoles', focus: 'Cardio + Core', order: 2 },
+                    exercises: [
+                        { id: '01_ex_jump_jacks', exerciseId: 'ex_jump_jacks', sets: 4, reps: 30, restSeconds: 25, order: 1 },
+                        { id: '02_ex_plancha_frontal', exerciseId: 'ex_plancha_frontal', sets: 3, reps: 30, restSeconds: 30, order: 2 },
+                    ],
+                },
+            ],
+        },
+        {
+            id: 'pg_recomp_6s',
+            data: {
+                name: 'Recomposición 6 semanas',
+                description: 'Mejora fuerza y composición corporal con 4 días por semana.',
+                level: 'intermedio',
+                goal: 'recomposicion',
+                durationWeeks: 6,
+                durationMinutes: 40,
+                equipmentNeeded: 'gym',
+                recommendedProfileTags: ['intermedio', 'gym', 'recomposicion'],
+                contraindications: ['dolor_lumbar_agudo'],
+                medicalWarnings: [],
+            },
+            days: [
+                {
+                    id: 'lunes',
+                    data: { dayName: 'Lunes', focus: 'Pierna', order: 1 },
+                    exercises: [
+                        { id: '01_ex_sentadilla_goblet', exerciseId: 'ex_sentadilla_goblet', sets: 4, reps: 10, restSeconds: 75, order: 1 },
+                        { id: '02_ex_peso_muerto_rumano_mancuernas', exerciseId: 'ex_peso_muerto_rumano_mancuernas', sets: 4, reps: 10, restSeconds: 90, order: 2 },
+                    ],
+                },
+                {
+                    id: 'jueves',
+                    data: { dayName: 'Jueves', focus: 'Push + Core', order: 2 },
+                    exercises: [
+                        { id: '01_ex_flexiones_inclinadas', exerciseId: 'ex_flexiones_inclinadas', sets: 4, reps: 12, restSeconds: 60, order: 1 },
+                        { id: '02_ex_plancha_frontal', exerciseId: 'ex_plancha_frontal', sets: 3, reps: 40, restSeconds: 35, order: 2 },
+                    ],
+                },
+            ],
+        },
+    ];
+    const batch = db.batch();
+    for (const ex of exercises) {
+        const ref = db.collection('exercises').doc(ex.id);
+        const { id, ...data } = ex;
+        batch.set(ref, { ...data, createdAt: ts, updatedAt: ts }, { merge: true });
+    }
+    for (const routine of routines) {
+        const rRef = db.collection('routines').doc(routine.id);
+        batch.set(rRef, { ...routine.data, createdAt: ts, updatedAt: ts }, { merge: true });
+        for (const ex of routine.exercises) {
+            const eRef = rRef.collection('exercises').doc(ex.id);
+            batch.set(eRef, { ...ex, updatedAt: ts }, { merge: true });
+        }
+    }
+    for (const program of programs) {
+        const pRef = db.collection('weeklyPrograms').doc(program.id);
+        batch.set(pRef, { ...program.data, createdAt: ts, updatedAt: ts }, { merge: true });
+        for (const day of program.days) {
+            const dRef = pRef.collection('days').doc(day.id);
+            batch.set(dRef, { ...day.data, updatedAt: ts }, { merge: true });
+            for (const ex of day.exercises) {
+                const eRef = dRef.collection('exercises').doc(ex.id);
+                batch.set(eRef, { ...ex, updatedAt: ts }, { merge: true });
+            }
+        }
+    }
+    await batch.commit();
+    res.status(200).json({
+        ok: true,
+        inserted: {
+            exercises: exercises.length,
+            routines: routines.length,
+            programs: programs.length,
+        },
+    });
 });

@@ -7,6 +7,7 @@ import '../../../models/custom_meal_model.dart';
 import '../../../models/my_day_entry_model.dart';
 import '../../../models/recipe_model.dart';
 import '../../../services/daily_data_service.dart';
+import '../../../services/custom_meals_firestore_service.dart';
 import '../../../services/my_day_ingredient_check_local_service.dart';
 import '../../../services/my_day_repository.dart';
 import '../../../services/my_day_repository_factory.dart';
@@ -31,6 +32,7 @@ class _MyDayTabState extends State<MyDayTab> {
   final _dailyData = DailyDataService();
   final _ingredientChecks = MyDayIngredientCheckLocalService();
   final _savedMealsService = SavedCustomMealsService();
+  final _customMealsCloud = CustomMealsFirestoreService();
 
   DateTime _day = DateTime.now();
   bool _loading = true;
@@ -38,6 +40,10 @@ class _MyDayTabState extends State<MyDayTab> {
   List<CustomMealEntryModel> _customMeals = const [];
   Map<String, RecipeModel> _recipeById = const {};
   List<CustomMealModel> _savedMeals = const [];
+  bool _didCloudMigration = false;
+
+  bool get _canUseCloud =>
+      Firebase.apps.isNotEmpty && FirebaseAuth.instance.currentUser != null;
 
   @override
   void initState() {
@@ -58,18 +64,51 @@ class _MyDayTabState extends State<MyDayTab> {
       final map = {for (final r in all) r.id: r};
 
       final dateKey = dateKeyFromDate(_day);
-      final daily = await _dailyData
-          .getForDateKey(dateKey)
-          .timeout(const Duration(seconds: 10));
 
-      final savedMeals = await _savedMealsService
-          .getAll()
-          .timeout(const Duration(seconds: 5));
+      List<CustomMealEntryModel> customMeals;
+      List<CustomMealModel> savedMeals;
+
+      if (_canUseCloud) {
+        if (!_didCloudMigration) {
+          final localByDate = await _dailyData
+              .getAllCustomMealsByDate()
+              .timeout(const Duration(seconds: 10));
+          for (final localEntry in localByDate.entries) {
+            await _customMealsCloud.setDailyEntriesForDate(
+              dateKey: localEntry.key,
+              entries: localEntry.value,
+            );
+          }
+
+          final localSavedAll = await _savedMealsService
+              .getAll()
+              .timeout(const Duration(seconds: 5));
+          if (localSavedAll.isNotEmpty) {
+            await _customMealsCloud.setSavedMeals(localSavedAll);
+          }
+          _didCloudMigration = true;
+        }
+
+        customMeals = await _customMealsCloud
+            .getForDateKey(dateKey)
+            .timeout(const Duration(seconds: 10));
+        savedMeals = await _customMealsCloud
+            .getSavedMeals()
+            .timeout(const Duration(seconds: 10));
+      } else {
+        final daily = await _dailyData
+            .getForDateKey(dateKey)
+            .timeout(const Duration(seconds: 10));
+        customMeals = daily.customMeals;
+        savedMeals = await _savedMealsService
+            .getAll()
+            .timeout(const Duration(seconds: 5));
+      }
 
       if (!mounted) return;
       setState(() {
         _entries = entries;
-        _customMeals = daily.customMeals;
+        _customMeals = customMeals;
         _recipeById = map;
         _savedMeals = savedMeals;
       });
@@ -168,16 +207,28 @@ class _MyDayTabState extends State<MyDayTab> {
     if (result == null) return;
 
     final dateKey = dateKeyFromDate(_day);
-    await _dailyData.addCustomMeal(
-      dateKey: dateKey,
-      mealType: result.mealType,
-      meal: result.meal,
-    );
+    if (_canUseCloud) {
+      await _customMealsCloud.addCustomMeal(
+        dateKey: dateKey,
+        mealType: result.mealType,
+        meal: result.meal,
+      );
+    } else {
+      await _dailyData.addCustomMeal(
+        dateKey: dateKey,
+        mealType: result.mealType,
+        meal: result.meal,
+      );
+    }
     await _load();
   }
 
   Future<void> _saveCustomMealForFuture(CustomMealModel meal) async {
-    await _savedMealsService.save(meal);
+    if (_canUseCloud) {
+      await _customMealsCloud.saveSavedMeal(meal);
+    } else {
+      await _savedMealsService.save(meal);
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Guardada para futuro: ${meal.nombre}')),
@@ -186,8 +237,12 @@ class _MyDayTabState extends State<MyDayTab> {
   }
 
   Future<void> _removeCustomMeal(CustomMealEntryModel e) async {
-    final dateKey = dateKeyFromDate(_day);
-    await _dailyData.removeCustomMeal(dateKey: dateKey, entryId: e.id);
+    if (_canUseCloud) {
+      await _customMealsCloud.removeCustomMeal(e.id);
+    } else {
+      final dateKey = dateKeyFromDate(_day);
+      await _dailyData.removeCustomMeal(dateKey: dateKey, entryId: e.id);
+    }
     await _load();
   }
 
@@ -218,11 +273,19 @@ class _MyDayTabState extends State<MyDayTab> {
       carbohidratos: meal.carbohidratos,
       grasas: meal.grasas,
     );
-    await _dailyData.addCustomMeal(
-      dateKey: dateKey,
-      mealType: mealType,
-      meal: freshMeal,
-    );
+    if (_canUseCloud) {
+      await _customMealsCloud.addCustomMeal(
+        dateKey: dateKey,
+        mealType: mealType,
+        meal: freshMeal,
+      );
+    } else {
+      await _dailyData.addCustomMeal(
+        dateKey: dateKey,
+        mealType: mealType,
+        meal: freshMeal,
+      );
+    }
     await _load();
   }
 

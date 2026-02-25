@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../models/recipe_filters.dart';
 import '../../../models/recipe_model.dart';
+import '../../../models/user_profile.dart';
 import '../../../services/recipe_repository.dart';
 import '../../../services/recipes_repository_factory.dart';
+import '../../../services/profile_service.dart';
+import '../../../services/settings_service.dart';
+import '../../../services/nutrition_personalization_service.dart';
 import '../../../widgets/nutrition/recipe_card.dart';
 import '../../../widgets/nutrition/recipe_compact_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
@@ -20,11 +24,15 @@ class ExploreRecipesTab extends StatefulWidget {
 
 class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   final RecipeRepository _recipes = RecipesRepositoryFactory.create();
+  final _profileService = ProfileService();
+  final _settingsService = SettingsService();
 
   List<RecipeModel> _all = const [];
   bool _loading = true;
   String _query = '';
   RecipeFilters _filters = RecipeFilters.empty();
+  UserProfile? _profile;
+  bool _showNutritionValues = true;
 
   @override
   void initState() {
@@ -39,8 +47,14 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
       final items = await _recipes
           .getAllRecipes()
           .timeout(const Duration(seconds: 10));
+      final profile = await _profileService.getProfile();
+      final settings = await _settingsService.getSettings();
       if (!mounted) return;
-      setState(() => _all = items);
+      setState(() {
+        _all = items;
+        _profile = profile;
+        _showNutritionValues = settings.showNutritionValues;
+      });
     } catch (e) {
       if (!mounted) return;
       // Keep previous data if available; just stop loading.
@@ -63,7 +77,9 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   List<RecipeModel> get _recommendedSorted {
     final list = [..._filteredBase];
     list.sort((a, b) {
-      final r = b.ratingAvg.compareTo(a.ratingAvg);
+      final sb = NutritionPersonalizationService.recipeRecommendationScore(_profile, b);
+      final sa = NutritionPersonalizationService.recipeRecommendationScore(_profile, a);
+      final r = sb.compareTo(sa);
       if (r != 0) return r;
       return b.likes.compareTo(a.likes);
     });
@@ -203,6 +219,7 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                           child: RecipeCompactCard(
                             recipe: r,
                             onTap: () => _openRecipe(r),
+                            showNutritionValues: _showNutritionValues,
                           ),
                         );
                       },
@@ -226,6 +243,7 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                           child: RecipeCompactCard(
                             recipe: r,
                             onTap: () => _openRecipe(r),
+                            showNutritionValues: _showNutritionValues,
                           ),
                         );
                       },
@@ -237,7 +255,11 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                   const _SectionHeader(title: 'Todas'),
                   const SizedBox(height: 10),
                   for (final r in allList) ...[
-                    RecipeCard(recipe: r, onTap: () => _openRecipe(r)),
+                    RecipeCard(
+                      recipe: r,
+                      onTap: () => _openRecipe(r),
+                      showNutritionValues: _showNutritionValues,
+                    ),
                     const SizedBox(height: 12),
                   ],
                 ],

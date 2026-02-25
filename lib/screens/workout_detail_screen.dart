@@ -2,12 +2,107 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../models/workout.dart';
+import '../models/workout_plan.dart';
+import '../services/workout_plan_service.dart';
+import '../utils/date_utils.dart';
 import 'workout_session_screen.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
   const WorkoutDetailScreen({super.key, required this.workout});
 
   final Workout workout;
+
+  DateTime _mondayOf(DateTime d) {
+    final weekday = d.weekday;
+    final delta = weekday - DateTime.monday;
+    return d.subtract(Duration(days: delta));
+  }
+
+  String _weekdayLabel(int i) {
+    const labels = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    return labels[i.clamp(0, 6)];
+  }
+
+  Future<void> _assignToDay(BuildContext context) async {
+    int selected = DateTime.now().weekday - 1;
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: StatefulBuilder(
+              builder: (context, setLocal) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: CFColors.surface,
+                    borderRadius: const BorderRadius.all(Radius.circular(18)),
+                    border: Border.all(color: CFColors.softGray),
+                  ),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Agregar entrenamiento: Selecciona el día',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (var i = 0; i < 7; i++)
+                            ChoiceChip(
+                              selected: selected == i,
+                              onSelected: (_) => setLocal(() => selected = i),
+                              label: Text(_weekdayLabel(i)),
+                              selectedColor: CFColors.primary.withValues(alpha: 0.12),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.of(context).pop(selected),
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Guardar en Mi semana'),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (picked == null) return;
+
+    final plans = WorkoutPlanService();
+    final weekStart = _mondayOf(DateUtilsCF.dateOnly(DateTime.now()));
+    final key = DateUtilsCF.toKey(weekStart);
+    final existing = await plans.getPlanForWeekKey(key);
+    final next = <int, String>{...?(existing?.assignments)};
+    next[picked] = workout.id;
+
+    await plans.upsertPlan(
+      (existing ?? WeekPlan(weekStart: weekStart, assignments: const {}))
+          .copyWith(weekStart: weekStart, assignments: next),
+    );
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Entrenamiento agregado para ${_weekdayLabel(picked)}.')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +137,27 @@ class WorkoutDetailScreen extends StatelessWidget {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              ex.name,
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ex.name,
+                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                if (ex.description.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    ex.description.trim(),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          color: CFColors.textSecondary,
+                                        ),
                                   ),
+                                ],
+                              ],
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -61,18 +172,28 @@ class WorkoutDetailScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () async {
-                    await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (_) => WorkoutSessionScreen(workout: workout),
-                      ),
-                    );
-                  },
-                  child: const Text('Comenzar entrenamiento'),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () async {
+                        await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => WorkoutSessionScreen(workout: workout),
+                          ),
+                        );
+                      },
+                      child: const Text('Comenzar entrenamiento'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _assignToDay(context),
+                      child: const Text('Agregar: Selecciona día'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

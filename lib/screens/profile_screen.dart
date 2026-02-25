@@ -918,6 +918,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const Divider(height: 1),
                           ProfileActionTile(
+                            icon: Icons.restaurant_menu,
+                            title: 'Mostrar valor nutricional',
+                            subtitle: settings.showNutritionValues ? 'Visible' : 'Oculto',
+                            trailing: Switch(
+                              value: settings.showNutritionValues,
+                              activeThumbColor: CFColors.primary,
+                              onChanged: (v) => _saveSettings(settings.copyWith(showNutritionValues: v)),
+                            ),
+                            onTap: () => _saveSettings(settings.copyWith(showNutritionValues: !settings.showNutritionValues)),
+                          ),
+                          const Divider(height: 1),
+                          ProfileActionTile(
                             icon: Icons.language_outlined,
                             title: 'Idioma',
                             subtitle: 'Español · Inglés (próximamente)',
@@ -934,7 +946,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const Divider(height: 1),
                           ProfileActionTile(
                             icon: Icons.volume_up_outlined,
-                            title: 'Sonido entrenamiento',
+                            title: 'Sonido al terminar ejercicio',
                             subtitle: settings.workoutEndSoundEnabled ? 'Activado' : 'Desactivado',
                             trailing: Switch(
                               value: settings.workoutEndSoundEnabled,

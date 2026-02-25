@@ -185,6 +185,14 @@ class Workout {
   final List<WorkoutGoal> goals;
   final WorkoutDifficulty difficulty;
 
+  // Firestore training metadata (backward compatible defaults).
+  final String equipmentNeeded;
+  final String sportCategory;
+  final List<String> recommendedForGoals;
+  final List<String> contraindications;
+  final List<String> medicalWarnings;
+  final List<String> recommendedProfileTags;
+
   const Workout({
     required this.id,
     required this.name,
@@ -195,6 +203,12 @@ class Workout {
     this.places = const [],
     this.goals = const [],
     this.difficulty = WorkoutDifficulty.moderado,
+    this.equipmentNeeded = 'none',
+    this.sportCategory = '',
+    this.recommendedForGoals = const [],
+    this.contraindications = const [],
+    this.medicalWarnings = const [],
+    this.recommendedProfileTags = const [],
   });
 
   bool matchesFilters(WorkoutFilters f) {

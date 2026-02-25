@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
 import '../models/exercise.dart';
@@ -26,6 +27,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   bool _isRunning = false;
   int? _initialSeconds;
   int? _remainingSeconds;
+  int? _selectedVariantIndex;
 
   Exercise get _current => widget.workout.exercises[_index];
 
@@ -54,7 +56,31 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     final seconds = _parseSeconds(_current.repsOrTime);
     _initialSeconds = seconds;
     _remainingSeconds = seconds;
+    _selectedVariantIndex = null;
     setState(() {});
+  }
+
+  String _normalizeMediaUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return '';
+    final raw = url.trim();
+
+    final fileIdMatch = RegExp(r'drive\.google\.com/file/d/([^/]+)').firstMatch(raw);
+    if (fileIdMatch != null) {
+      final id = fileIdMatch.group(1);
+      if (id != null && id.isNotEmpty) {
+        return 'https://drive.google.com/uc?export=view&id=$id';
+      }
+    }
+
+    final openIdMatch = RegExp(r'[?&]id=([^&]+)').firstMatch(raw);
+    if (raw.contains('drive.google.com') && openIdMatch != null) {
+      final id = openIdMatch.group(1);
+      if (id != null && id.isNotEmpty) {
+        return 'https://drive.google.com/uc?export=view&id=$id';
+      }
+    }
+
+    return raw;
   }
 
   int? _parseSeconds(String repsOrTime) {
@@ -167,6 +193,20 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     final total = widget.workout.exercises.length;
     final ex = _current;
     final seconds = _initialSeconds;
+    final hasVariants = ex.variants.isNotEmpty;
+    final selectedVariant = (_selectedVariantIndex != null &&
+            _selectedVariantIndex! >= 0 &&
+            _selectedVariantIndex! < ex.variants.length)
+        ? ex.variants[_selectedVariantIndex!]
+        : null;
+
+    final imageUrl = _normalizeMediaUrl(selectedVariant?.imageUrl ?? ex.imageUrl);
+    final videoUrl = _normalizeMediaUrl(selectedVariant?.videoUrl ?? ex.videoUrl);
+    final description = (() {
+      final d = (selectedVariant?.description ?? ex.description).trim();
+      if (d.isEmpty) return 'Sin descripción disponible.';
+      return d;
+    })();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -197,9 +237,20 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                   borderRadius: const BorderRadius.all(Radius.circular(16)),
                   border: Border.all(color: CFColors.primary.withValues(alpha: 0.14)),
                 ),
-                child: const Center(
-                  child: Icon(Icons.image_outlined, color: CFColors.primary, size: 40),
-                ),
+                child: imageUrl.isEmpty
+                    ? const Center(
+                        child: Icon(Icons.image_outlined, color: CFColors.primary, size: 40),
+                      )
+                    : ClipRRect(
+                        borderRadius: const BorderRadius.all(Radius.circular(16)),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Center(
+                            child: Icon(Icons.broken_image_outlined, color: CFColors.primary, size: 36),
+                          ),
+                        ),
+                      ),
               ),
               const SizedBox(height: 12),
               Text(
@@ -213,18 +264,35 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               Text(ex.repsOrTime, style: theme.textTheme.titleMedium),
               const SizedBox(height: 10),
               Text(
-                'Descripción: próximamente.',
+                description,
                 style: theme.textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
               ),
+              if (videoUrl.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () async {
+                    final uri = Uri.tryParse(videoUrl);
+                    if (uri == null) return;
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  },
+                  icon: const Icon(Icons.play_circle_outline),
+                  label: const Text('Ver vídeo'),
+                ),
+              ],
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _VariantChip(text: 'Variante A'),
-                  _VariantChip(text: 'Variante B'),
-                ],
-              ),
+              if (hasVariants)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = 0; i < ex.variants.length; i++)
+                      _VariantChip(
+                        text: ex.variants[i].name,
+                        selected: _selectedVariantIndex == i,
+                        onTap: () => setState(() => _selectedVariantIndex = i),
+                      ),
+                  ],
+                ),
               if (seconds != null) ...[
                 const SizedBox(height: 14),
                 Text(
@@ -331,25 +399,39 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 }
 
 class _VariantChip extends StatelessWidget {
-  const _VariantChip({required this.text});
+  const _VariantChip({
+    required this.text,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String text;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: CFColors.primary.withValues(alpha: 0.08),
-        borderRadius: const BorderRadius.all(Radius.circular(999)),
-        border: Border.all(color: CFColors.primary.withValues(alpha: 0.16)),
-      ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: CFColors.primary,
-            ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: const BorderRadius.all(Radius.circular(999)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? CFColors.primary.withValues(alpha: 0.14)
+              : CFColors.primary.withValues(alpha: 0.08),
+          borderRadius: const BorderRadius.all(Radius.circular(999)),
+          border: Border.all(
+            color: selected ? CFColors.primary : CFColors.primary.withValues(alpha: 0.16),
+          ),
+        ),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: CFColors.primary,
+              ),
+        ),
       ),
     );
   }

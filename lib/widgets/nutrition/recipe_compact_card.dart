@@ -9,10 +9,12 @@ class RecipeCompactCard extends StatelessWidget {
     super.key,
     required this.recipe,
     required this.onTap,
+    this.showNutritionValues = true,
   });
 
   final RecipeModel recipe;
   final VoidCallback onTap;
+  final bool showNutritionValues;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +49,9 @@ class RecipeCompactCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${recipe.durationMinutes} min · ${recipe.kcalPerServing} kcal',
+                    showNutritionValues
+                        ? '${recipe.durationMinutes} min · ${recipe.kcalPerServing} kcal'
+                        : '${recipe.durationMinutes} min',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,

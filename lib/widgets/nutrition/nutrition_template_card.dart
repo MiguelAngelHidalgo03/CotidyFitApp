@@ -13,6 +13,7 @@ class NutritionTemplateCard extends StatelessWidget {
     required this.onTap,
     required this.onToggleLike,
     required this.onRate,
+    this.showNutritionValues = true,
   });
 
   final NutritionTemplateModel template;
@@ -21,6 +22,7 @@ class NutritionTemplateCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onToggleLike;
   final ValueChanged<int> onRate;
+  final bool showNutritionValues;
 
   String get _ratingLabel {
     final v = template.avgRating;
@@ -96,17 +98,19 @@ class NutritionTemplateCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _Pill(text: '${template.caloriesTotal.round()} kcal'),
-                _Pill(text: 'P ${template.proteinTotal.round()}g'),
-                _Pill(text: 'C ${template.carbsTotal.round()}g'),
-                _Pill(text: 'G ${template.fatsTotal.round()}g'),
-              ],
-            ),
+            if (showNutritionValues) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _Pill(text: '${template.caloriesTotal.round()} kcal'),
+                  _Pill(text: 'P ${template.proteinTotal.round()}g'),
+                  _Pill(text: 'C ${template.carbsTotal.round()}g'),
+                  _Pill(text: 'G ${template.fatsTotal.round()}g'),
+                ],
+              ),
+            ],
           ],
         ),
       ),

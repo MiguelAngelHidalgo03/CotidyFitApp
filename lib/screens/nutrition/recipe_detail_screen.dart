@@ -3,11 +3,16 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/my_day_entry_model.dart';
 import '../../models/recipe_model.dart';
+import '../../models/user_profile.dart';
+import '../../models/user_settings.dart';
 import '../../services/my_day_repository.dart';
 import '../../services/my_day_repository_factory.dart';
+import '../../services/nutrition_personalization_service.dart';
+import '../../services/profile_service.dart';
 import '../../services/recipe_interactions_firestore_service.dart';
 import '../../services/recipe_repository.dart';
 import '../../services/recipes_repository_factory.dart';
+import '../../services/settings_service.dart';
 import '../../widgets/progress/progress_section_card.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -23,12 +28,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final RecipeRepository _recipes = RecipesRepositoryFactory.create();
   final _interactions = RecipeInteractionsFirestoreService();
   final MyDayRepository _myDay = MyDayRepositoryFactory.create();
+  final _profileService = ProfileService();
+  final _settingsService = SettingsService();
 
   bool _loading = true;
   String? _error;
   RecipeModel? _recipe;
   bool _isFavorite = false;
   double? _myRating;
+  UserProfile? _profile;
+  UserSettings _settings = UserSettings.defaults();
   final Set<int> _checkedIngredients = {};
 
   @override
@@ -69,12 +78,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           : await _interactions
               .getMyRating(recipeId: r.id)
               .timeout(const Duration(seconds: 10));
+      final profile = await _profileService.getProfile();
+      final settings = await _settingsService.getSettings();
 
       if (!mounted) return;
       setState(() {
         _recipe = r;
         _isFavorite = fav;
         _myRating = myRating;
+        _profile = profile;
+        _settings = settings;
       });
     } catch (e) {
       if (!mounted) return;
@@ -332,6 +345,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       );
     }
 
+    final showNutritionValues = _settings.showNutritionValues;
+    final servingFactor = NutritionPersonalizationService
+      .suggestedRecipeServingFactor(_profile, r);
+    final suggestedServings = servingFactor;
+    final suggestedGrams = (r.gramsPerServing * servingFactor).round();
+    final suggestedKcal = (r.kcalPerServing * servingFactor).round();
+    final goalLabel = (_profile?.goal.trim().isNotEmpty ?? false)
+      ? _profile!.goal
+      : 'tu perfil';
+
     return Scaffold(
       appBar: AppBar(
         title: Text(r.name),
@@ -424,20 +447,58 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                         icon: Icons.favorite,
                         label: '${r.likes} likes',
                       ),
-                      _statChip(
-                        icon: Icons.local_fire_department_outlined,
-                        label: '${r.kcalPerServing} kcal/ración',
-                      ),
-                      _statChip(
-                        icon: Icons.local_fire_department,
-                        label: '${r.kcalPer100g} kcal/100g',
-                      ),
+                      if (showNutritionValues)
+                        _statChip(
+                          icon: Icons.local_fire_department_outlined,
+                          label: '${r.kcalPerServing} kcal/ración',
+                        ),
+                      if (showNutritionValues)
+                        _statChip(
+                          icon: Icons.local_fire_department,
+                          label: '${r.kcalPer100g} kcal/100g',
+                        ),
                       _statChip(
                         icon: Icons.schedule,
                         label: '${r.durationMinutes} min',
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: CFColors.primary.withValues(alpha: 0.08),
+                      borderRadius: const BorderRadius.all(Radius.circular(14)),
+                      border: Border.all(color: CFColors.primary.withValues(alpha: 0.35)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cantidad recomendada para $goalLabel',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${suggestedServings.toStringAsFixed(1)} ración (~$suggestedGrams g)',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (showNutritionValues) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '~$suggestedKcal kcal para esta comida',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (showNutritionValues) ...[
                   const SizedBox(height: 12),
                   Text(
                     'Macronutrientes (por ración)',
@@ -470,6 +531,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       ),
                     ],
                   ),
+                  ],
                   if (_myRating != null) ...[
                     const SizedBox(height: 10),
                     Text(

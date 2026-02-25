@@ -1,37 +1,34 @@
-import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../models/workout.dart';
+import '../services/workout_history_service.dart';
 import '../services/local_storage_service.dart';
 import '../utils/date_utils.dart';
 
 class WorkoutSessionService {
-  static const _kCompletedWorkoutsByDateKey = 'cf_completed_workouts_by_date_json';
   static const int cfBonus = 20;
 
-  WorkoutSessionService({LocalStorageService? storage})
-      : _storage = storage ?? LocalStorageService();
+  WorkoutSessionService({
+    LocalStorageService? storage,
+    WorkoutHistoryService? history,
+  })  : _storage = storage ?? LocalStorageService(),
+        _history = history ?? WorkoutHistoryService();
 
   final LocalStorageService _storage;
-
-  Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+  final WorkoutHistoryService _history;
 
   Future<bool> isWorkoutCompletedForDate(String dateKey) async {
-    final map = await _getCompletedMap();
-    return map.containsKey(dateKey);
+    final name = await _history.getCompletedWorkoutName(dateKey);
+    return name != null;
   }
 
   Future<void> markWorkoutCompleted({required String dateKey, required String workoutName}) async {
-    final map = await _getCompletedMap();
-    map[dateKey] = workoutName;
-    final p = await _prefs();
-    await p.setString(_kCompletedWorkoutsByDateKey, jsonEncode(map));
+    await _history.upsertCompletedWorkoutForDate(
+      dateKey: dateKey,
+      workoutName: workoutName,
+    );
   }
 
   Future<String?> getCompletedWorkoutName(String dateKey) async {
-    final map = await _getCompletedMap();
-    return map[dateKey];
+    return _history.getCompletedWorkoutName(dateKey);
   }
 
   Future<void> completeWorkoutAndApplyBonus({required Workout workout}) async {
@@ -55,22 +52,5 @@ class WorkoutSessionService {
     final finalCf = (existing > target ? existing : target).clamp(0, 100);
 
     await _storage.upsertCfForDate(dateKey: dateKey, cf: finalCf);
-  }
-
-  Future<Map<String, String>> _getCompletedMap() async {
-    final p = await _prefs();
-    final raw = p.getString(_kCompletedWorkoutsByDateKey);
-    if (raw == null || raw.trim().isEmpty) return {};
-
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return {};
-
-    final out = <String, String>{};
-    for (final e in decoded.entries) {
-      final k = e.key;
-      final v = e.value;
-      if (k is String && v is String) out[k] = v;
-    }
-    return out;
   }
 }

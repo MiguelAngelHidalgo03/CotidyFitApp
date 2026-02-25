@@ -119,7 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const Divider(height: 1),
                         ProfileActionTile(
                           icon: Icons.volume_up_outlined,
-                          title: 'Sonido entrenamiento',
+                          title: 'Sonido al terminar ejercicio',
                           subtitle: s.workoutEndSoundEnabled
                               ? 'Activado'
                               : 'Desactivado',

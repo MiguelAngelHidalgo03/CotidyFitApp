@@ -12,7 +12,7 @@ class TrainingWeekSummaryService {
     WorkoutService? workouts,
   }) : _plans = plans ?? WorkoutPlanService(),
        _history = history ?? WorkoutHistoryService(),
-       _workouts = workouts ?? const WorkoutService();
+      _workouts = workouts ?? WorkoutService();
 
   final WorkoutPlanService _plans;
   final WorkoutHistoryService _history;
@@ -30,6 +30,7 @@ class TrainingWeekSummaryService {
   }
 
   Future<TrainingWeekSummary> getSummaryForWeekStart(DateTime weekStart) async {
+    await _workouts.ensureLoaded();
     final ws = mondayOf(weekStart);
     final planKey = DateUtilsCF.toKey(ws);
     final plan = await _plans.getPlanForWeekKey(planKey);

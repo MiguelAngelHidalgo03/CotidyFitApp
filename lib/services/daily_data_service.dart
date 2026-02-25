@@ -75,6 +75,33 @@ class DailyDataService {
     await upsert(current.copyWith(customMeals: updated));
   }
 
+  Future<Map<String, List<CustomMealEntryModel>>> getAllCustomMealsByDate() async {
+    final all = await _getAllRaw();
+    if (all.isEmpty) return const {};
+
+    final out = <String, List<CustomMealEntryModel>>{};
+
+    for (final entry in all.entries) {
+      final dateKey = entry.key;
+      final raw = entry.value;
+      if (raw.trim().isEmpty) continue;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) continue;
+
+      final map = <String, Object?>{};
+      for (final e in decoded.entries) {
+        if (e.key is String) map[e.key as String] = e.value;
+      }
+
+      final model = DailyDataModel.fromJson(map);
+      if (model.customMeals.isEmpty) continue;
+      out[dateKey] = model.customMeals;
+    }
+
+    return out;
+  }
+
   int computeWeightedCf({
     required DailyDataModel data,
     required bool workoutCompleted,

@@ -21,7 +21,7 @@ class ProgressWeekSummaryService {
   })  : _storage = storage ?? LocalStorageService(),
         _daily = daily ?? DailyDataService(),
         _workoutHistory = workoutHistory ?? WorkoutHistoryService(),
-        _workouts = workouts ?? const WorkoutService(),
+      _workouts = workouts ?? WorkoutService(),
         _myDay = myDay ?? MyDayRepositoryFactory.create(),
         _recipes = recipes ?? RecipesRepositoryFactory.create();
 
@@ -33,6 +33,7 @@ class ProgressWeekSummaryService {
   final RecipeRepository _recipes;
 
   Future<ProgressWeekSummary> getCurrentWeekSummary() async {
+    await _workouts.ensureLoaded();
     final today = DateUtilsCF.dateOnly(DateTime.now());
     final weekStart = _mondayOf(today);
     final weekEnd = weekStart.add(const Duration(days: 6));
