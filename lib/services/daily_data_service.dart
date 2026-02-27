@@ -12,6 +12,7 @@ class DailyDataService {
 
   static const int stepsTarget = 8000;
   static const int activeMinutesTarget = 30;
+  static const int meditationMinutesTarget = 5;
   static const double waterLitersTarget = 2.5;
   static const int mealsTarget = 3;
 
@@ -159,14 +160,13 @@ class DailyDataService {
     var count = 0;
     if (workoutCompleted) count++;
     if (data.steps >= stepsTarget) count++;
-    if (data.activeMinutes >= activeMinutesTarget) count++;
     if (data.waterLiters >= waterLitersTarget) count++;
     if (mealsLoggedCount >= mealsTarget) count++;
-    if (data.stretchesDone) count++;
+    if (data.meditationMinutes >= meditationMinutesTarget) count++;
     return count;
   }
 
-  int totalTrackablesCount() => 6;
+  int totalTrackablesCount() => 5;
 
   int _scoreProgress(int value, int target) {
     if (target <= 0) return 0;

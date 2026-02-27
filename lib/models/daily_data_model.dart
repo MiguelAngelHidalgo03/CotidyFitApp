@@ -5,6 +5,7 @@ class DailyDataModel {
     required this.dateKey,
     required this.steps,
     required this.activeMinutes,
+    required this.meditationMinutes,
     required this.waterLiters,
     required this.stretchesDone,
     required this.energy,
@@ -18,6 +19,7 @@ class DailyDataModel {
 
   final int steps;
   final int activeMinutes;
+  final int meditationMinutes;
   final double waterLiters;
   final bool stretchesDone;
 
@@ -32,6 +34,7 @@ class DailyDataModel {
   DailyDataModel copyWith({
     int? steps,
     int? activeMinutes,
+    int? meditationMinutes,
     double? waterLiters,
     bool? stretchesDone,
     int? energy,
@@ -48,6 +51,7 @@ class DailyDataModel {
       dateKey: dateKey,
       steps: steps ?? this.steps,
       activeMinutes: activeMinutes ?? this.activeMinutes,
+      meditationMinutes: meditationMinutes ?? this.meditationMinutes,
       waterLiters: waterLiters ?? this.waterLiters,
       stretchesDone: stretchesDone ?? this.stretchesDone,
       energy: clearEnergy ? null : (energy ?? this.energy),
@@ -63,6 +67,7 @@ class DailyDataModel {
       dateKey: dateKey,
       steps: 0,
       activeMinutes: 0,
+      meditationMinutes: 0,
       waterLiters: 0,
       stretchesDone: false,
       energy: null,
@@ -76,6 +81,7 @@ class DailyDataModel {
   factory DailyDataModel.fromJson(Map<String, Object?> json) {
     final steps = _asInt(json['steps']) ?? 0;
     final activeMinutes = _asInt(json['activeMinutes']) ?? 0;
+    final meditationMinutes = _asInt(json['meditationMinutes']) ?? 0;
 
     // Back-compat: previous versions stored water as integer cups (250ml).
     final waterLiters = _asDouble(json['waterLiters']) ??
@@ -86,6 +92,7 @@ class DailyDataModel {
       dateKey: (json['dateKey'] as String?) ?? '',
       steps: steps < 0 ? 0 : steps,
       activeMinutes: activeMinutes < 0 ? 0 : activeMinutes,
+      meditationMinutes: meditationMinutes < 0 ? 0 : meditationMinutes,
       waterLiters: waterLiters < 0 ? 0 : waterLiters,
       stretchesDone: stretchesDone,
       energy: _clampRating(_asInt(json['energy'])),
@@ -101,6 +108,7 @@ class DailyDataModel {
       'dateKey': dateKey,
       'steps': steps,
       'activeMinutes': activeMinutes,
+      'meditationMinutes': meditationMinutes,
       'waterLiters': waterLiters,
       'stretchesDone': stretchesDone,
       'energy': energy,

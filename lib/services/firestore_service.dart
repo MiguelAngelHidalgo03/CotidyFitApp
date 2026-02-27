@@ -16,6 +16,14 @@ class FirestoreService {
     return userDoc(uid).collection('daily_data');
   }
 
+  CollectionReference<Map<String, dynamic>> dailyStatsCol(String uid) {
+    return userDoc(uid).collection('dailyStats');
+  }
+
+  CollectionReference<Map<String, dynamic>> dailyMoodCol(String uid) {
+    return userDoc(uid).collection('dailyMood');
+  }
+
   Future<void> upsertUser({
     required String uid,
     required UserProfile profile,
@@ -80,6 +88,67 @@ class FirestoreService {
       water: data.waterLiters,
       minutesActive: data.activeMinutes,
       cfScore: cfScore,
+    );
+  }
+
+  Future<void> saveMeditationMinutes({
+    required String uid,
+    required String dateKey,
+    required int meditationMinutes,
+  }) async {
+    await dailyStatsCol(uid).doc(dateKey).set(
+      {
+        'dateKey': dateKey,
+        'meditationMinutes': meditationMinutes < 0 ? 0 : meditationMinutes,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> saveDailyTracking({
+    required String uid,
+    required String dateKey,
+    required bool workoutCompleted,
+    required int steps,
+    required double waterLiters,
+    required int mealsLoggedCount,
+    required int meditationMinutes,
+    required int cfIndex,
+  }) async {
+    await dailyStatsCol(uid).doc(dateKey).set(
+      {
+        'dateKey': dateKey,
+        'workoutCompleted': workoutCompleted,
+        'steps': steps < 0 ? 0 : steps,
+        'waterLiters': waterLiters < 0 ? 0 : waterLiters,
+        'mealsLoggedCount': mealsLoggedCount < 0 ? 0 : mealsLoggedCount,
+        'meditationMinutes': meditationMinutes < 0 ? 0 : meditationMinutes,
+        'cfIndex': cfIndex.clamp(0, 100),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> saveDailyMood({
+    required String uid,
+    required String dateKey,
+    required String energia,
+    required String animo,
+    required String estres,
+    required String sueno,
+  }) async {
+    await dailyMoodCol(uid).doc(dateKey).set(
+      {
+        'dateKey': dateKey,
+        'energia': energia,
+        'animo': animo,
+        'estres': estres,
+        'sueno': sueno,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
     );
   }
 

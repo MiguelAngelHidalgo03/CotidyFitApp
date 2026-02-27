@@ -30,6 +30,10 @@
 	<string>Necesitamos acceder a tus pasos para mostrar tu actividad diaria.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Necesitamos permiso para escribir datos de salud si activas la sincronización.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Usamos tu ubicación para mostrar ciudad, clima y hora local en Inicio.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Usamos tu ubicación para mostrar ciudad, clima y hora local en Inicio.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

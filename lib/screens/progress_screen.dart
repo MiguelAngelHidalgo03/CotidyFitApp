@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/progress_week_summary.dart';
 import '../models/user_profile.dart';
 import '../models/weight_entry.dart';
+import '../services/achievements_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
@@ -15,6 +16,7 @@ import '../widgets/progress/progress_health_summary_card.dart';
 import '../widgets/progress/progress_insights_section.dart';
 import '../widgets/progress/progress_nutrition_compliance_card.dart';
 import '../widgets/progress/progress_premium_card.dart';
+import '../widgets/progress/progress_achievements_card.dart';
 import '../widgets/progress/progress_smart_tracking_card.dart';
 import '../widgets/progress/progress_weight_summary_card.dart';
 import 'profile_screen.dart';
@@ -32,12 +34,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
   late final WeightService _weightService;
   late final ProfileService _profiles;
   late final ProgressWeekSummaryService _weekSummaryService;
+  late final AchievementsService _achievements;
 
   ProgressData? _data;
   WeightSummary? _weight;
   Map<String, int> _cfHistory = const {};
   UserProfile? _profile;
   ProgressWeekSummary? _weekSummary;
+  List<AchievementViewItem> _achievementItems = const [];
   bool _loading = true;
 
   @override
@@ -48,6 +52,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     _weightService = WeightService();
     _profiles = ProfileService();
     _weekSummaryService = ProgressWeekSummaryService(storage: _storage);
+    _achievements = AchievementsService();
 
     _load();
   }
@@ -59,6 +64,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     final history = await _storage.getCfHistory();
     final profile = await _profiles.getOrCreateProfile();
     final weekSummary = await _weekSummaryService.getCurrentWeekSummary();
+    final achievements = await _achievements.getAchievementsForCurrentUser();
     if (!mounted) return;
     setState(() {
       _data = data;
@@ -66,6 +72,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       _cfHistory = history;
       _profile = profile;
       _weekSummary = weekSummary;
+      _achievementItems = achievements;
       _loading = false;
     });
   }
@@ -189,6 +196,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
       ProgressSmartTrackingCard(summary: weekSummary),
       const SizedBox(height: 14),
       ProgressInsightsSection(insights: insights),
+      const SizedBox(height: 14),
+      ProgressAchievementsCard(items: _achievementItems),
       const SizedBox(height: 14),
       const ProgressPremiumCard(),
       const SizedBox(height: 10),

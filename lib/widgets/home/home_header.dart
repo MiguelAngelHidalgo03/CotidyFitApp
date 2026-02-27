@@ -18,6 +18,8 @@ class HomeHeader extends StatelessWidget {
     final now = DateTime.now();
     final greeting = _greetingForHour(now.hour);
     final dateLabel = _formatSpanishDate(now);
+    final streakProgress = (streakCount / 7).clamp(0, 1).toDouble();
+    final isLateNight = now.hour < 5;
 
     return Container(
       decoration: BoxDecoration(
@@ -41,8 +43,28 @@ class HomeHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(dateLabel, style: Theme.of(context).textTheme.bodyMedium),
+                if (isLateNight) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Aún estás a tiempo de sumar hoy.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: CFColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _StreakPill(streakCount: streakCount),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: const BorderRadius.all(Radius.circular(999)),
+                  child: LinearProgressIndicator(
+                    value: streakProgress,
+                    minHeight: 8,
+                    backgroundColor: CFColors.softGray,
+                    valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                  ),
+                ),
               ],
             ),
           ),
@@ -64,8 +86,9 @@ class HomeHeader extends StatelessWidget {
   }
 
   String _greetingForHour(int hour) {
-    if (hour < 12) return 'Buenos días';
-    if (hour < 20) return 'Buenas tardes';
+    if (hour >= 5 && hour < 12) return 'Buenos días';
+    if (hour >= 12 && hour < 20) return 'Buenas tardes';
+    if (hour >= 20 || hour < 5) return 'Buenas noches';
     return 'Buenas noches';
   }
 

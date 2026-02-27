@@ -1,4 +1,5 @@
 import '../models/workout.dart';
+import '../services/achievements_service.dart';
 import '../services/workout_history_service.dart';
 import '../services/local_storage_service.dart';
 import '../utils/date_utils.dart';
@@ -9,11 +10,14 @@ class WorkoutSessionService {
   WorkoutSessionService({
     LocalStorageService? storage,
     WorkoutHistoryService? history,
+      AchievementsService? achievements,
   })  : _storage = storage ?? LocalStorageService(),
-        _history = history ?? WorkoutHistoryService();
+      _history = history ?? WorkoutHistoryService(),
+      _achievements = achievements ?? AchievementsService();
 
   final LocalStorageService _storage;
   final WorkoutHistoryService _history;
+    final AchievementsService _achievements;
 
   Future<bool> isWorkoutCompletedForDate(String dateKey) async {
     final name = await _history.getCompletedWorkoutName(dateKey);
@@ -52,5 +56,12 @@ class WorkoutSessionService {
     final finalCf = (existing > target ? existing : target).clamp(0, 100);
 
     await _storage.upsertCfForDate(dateKey: dateKey, cf: finalCf);
+
+    final uid = _achievements.currentUid;
+    if (uid != null) {
+      try {
+        await _achievements.checkAchievements(uid);
+      } catch (_) {}
+    }
   }
 }

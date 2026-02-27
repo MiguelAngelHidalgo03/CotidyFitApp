@@ -104,6 +104,16 @@ service cloud.firestore {
     }
 
     // Training catalog.
+    match /achievementsCatalog/{achievementId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if _isAdmin();
+    }
+
+    match /weeklyChallenges/{challengeId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if _isAdmin();
+    }
+
     match /exercises/{exerciseId} {
       allow get, list: if request.auth != null;
       allow create, update, delete: if _isAdmin();

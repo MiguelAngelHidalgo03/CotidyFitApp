@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
+exports.onUserTaskReminderChanged = exports.seedAchievementsCatalog = exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 if (admin.apps.length === 0) {
@@ -701,4 +701,148 @@ exports.seedTrainingSampleData = functions.https.onRequest(async (req, res) => {
             programs: programs.length,
         },
     });
+});
+// ── Seed sample achievements catalog (temporary utility) ──────────────
+exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.status(405).json({ ok: false, error: 'Use POST' });
+        return;
+    }
+    const key = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
+    const expected = (process.env.SEED_KEY ?? 'cotidyfit-seed-2026').trim();
+    if (key !== expected) {
+        res.status(401).json({ ok: false, error: 'Unauthorized' });
+        return;
+    }
+    const db = admin.firestore();
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+    const achievements = [
+        {
+            id: 'first_workout',
+            title: 'Primer entrenamiento',
+            description: 'Completa tu primer entrenamiento.',
+            icon: 'fitness_center_outlined',
+            category: 'entrenamiento',
+            conditionType: 'workouts_completed',
+            conditionValue: 1,
+        },
+        {
+            id: 'streak_7_days',
+            title: 'Constante 7 días',
+            description: 'Mantén una racha de 7 días.',
+            icon: 'local_fire_department_outlined',
+            category: 'racha',
+            conditionType: 'streak_days',
+            conditionValue: 7,
+        },
+        {
+            id: 'hydrated_2000',
+            title: 'Hidratado',
+            description: 'Llega a 2000 ml de agua en un día.',
+            icon: 'water_drop_outlined',
+            category: 'nutricion',
+            conditionType: 'water_ml',
+            conditionValue: 2000,
+        },
+        {
+            id: 'mind_strong',
+            title: 'Mente fuerte',
+            description: 'Registra meditación en 5 días.',
+            icon: 'self_improvement_outlined',
+            category: 'mentalidad',
+            conditionType: 'meditation_days',
+            conditionValue: 5,
+        },
+        {
+            id: 'workouts_10',
+            title: '10 entrenamientos',
+            description: 'Completa 10 entrenamientos.',
+            icon: 'military_tech_outlined',
+            category: 'entrenamiento',
+            conditionType: 'workouts_completed',
+            conditionValue: 10,
+        },
+        {
+            id: 'first_week_program',
+            title: 'Primera semana completada',
+            description: 'Completa todos los entrenamientos de una semana planificada.',
+            icon: 'event_available_outlined',
+            category: 'progreso',
+            conditionType: 'weekly_program_completed',
+            conditionValue: 1,
+        },
+    ];
+    const batch = db.batch();
+    for (const a of achievements) {
+        const ref = db.collection('achievementsCatalog').doc(a.id);
+        const { id, ...data } = a;
+        batch.set(ref, { ...data, createdAt: ts }, { merge: true });
+    }
+    await batch.commit();
+    res.status(200).json({
+        ok: true,
+        inserted: achievements.length,
+    });
+});
+exports.onUserTaskReminderChanged = functions.firestore
+    .document('users/{userId}/tasks/{taskId}')
+    .onWrite(async (change, context) => {
+    const userId = context.params.userId?.trim() ?? '';
+    if (!userId)
+        return;
+    const after = change.after.exists ? change.after.data() : undefined;
+    if (!after)
+        return;
+    const enabled = after.notificationEnabled === true;
+    if (!enabled)
+        return;
+    const before = change.before.exists ? change.before.data() : undefined;
+    const beforeEnabled = before?.notificationEnabled === true;
+    const beforeDue = before?.dueDate;
+    const afterDue = after.dueDate;
+    const dueChanged = (beforeDue?.toMillis?.() ?? 0) !== (afterDue?.toMillis?.() ?? 0);
+    if (beforeEnabled && !dueChanged)
+        return;
+    const title = (after.title ?? 'Tarea pendiente').toString().trim() || 'Tarea pendiente';
+    const due = afterDue?.toDate?.();
+    const dueText = due
+        ? `${String(due.getDate()).padStart(2, '0')}/${String(due.getMonth() + 1).padStart(2, '0')}`
+        : 'hoy';
+    const tokensSnap = await admin
+        .firestore()
+        .collection('users')
+        .doc(userId)
+        .collection('tokens')
+        .get();
+    const tokens = tokensSnap.docs
+        .map((d) => (d.get('token') ?? d.id).toString().trim())
+        .filter((t) => t.length > 0);
+    if (tokens.length === 0)
+        return;
+    const result = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: {
+            title: 'Recordatorio de tarea',
+            body: `${title} · ${dueText}`,
+        },
+        data: {
+            type: 'task_reminder',
+            taskId: context.params.taskId ?? '',
+        },
+    });
+    const invalid = [];
+    for (let i = 0; i < result.responses.length; i++) {
+        const r = result.responses[i];
+        if (!r.success && isInvalidTokenError(r.error?.code)) {
+            invalid.push(tokens[i]);
+        }
+    }
+    if (invalid.length > 0) {
+        const db = admin.firestore();
+        const batch = db.batch();
+        for (const token of invalid) {
+            batch.delete(db.collection('users').doc(userId).collection('tokens').doc(token));
+        }
+        await batch.commit();
+    }
 });

@@ -16,9 +16,10 @@ class DailyActionsSection extends StatelessWidget {
     required this.onGoToNutrition,
     required this.onGoToTraining,
     required this.onSetSteps,
-    required this.onSetActiveMinutes,
     required this.onSetWaterLiters,
-    required this.onToggleStretches,
+    required this.onAddWater250ml,
+    required this.onSetMeditationMinutes,
+    required this.onAddMeditation,
     required this.onConfirm,
   });
 
@@ -28,12 +29,14 @@ class DailyActionsSection extends StatelessWidget {
   final int completedCount;
   final int totalCount;
   final bool completedToday;
+
   final VoidCallback onGoToNutrition;
   final VoidCallback onGoToTraining;
   final ValueChanged<int> onSetSteps;
-  final ValueChanged<int> onSetActiveMinutes;
   final ValueChanged<double> onSetWaterLiters;
-  final Future<void> Function() onToggleStretches;
+  final Future<void> Function() onAddWater250ml;
+  final ValueChanged<int> onSetMeditationMinutes;
+  final Future<void> Function() onAddMeditation;
   final Future<void> Function() onConfirm;
 
   @override
@@ -54,9 +57,7 @@ class DailyActionsSection extends StatelessWidget {
         children: [
           Text(
             '¿Qué has hecho hoy?',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontSize: 22,
-                ),
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 22),
           ),
           const SizedBox(height: 12),
           _ActionCard(
@@ -84,23 +85,9 @@ class DailyActionsSection extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _ActionCard(
-            title: 'Min activos',
-            subtitle: '${data.activeMinutes} / ${DailyDataService.activeMinutesTarget}',
-            icon: Icons.timer_outlined,
-            completed: data.activeMinutes >= DailyDataService.activeMinutesTarget,
-            disabled: completedToday,
-            onTap: () => _editInt(
-              context: context,
-              title: 'Min activos',
-              hint: 'Ej: 30',
-              initial: data.activeMinutes,
-              onSave: onSetActiveMinutes,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _ActionCard(
             title: 'Agua',
-            subtitle: '${_fmtLiters(data.waterLiters)} / ${DailyDataService.waterLitersTarget.toStringAsFixed(1)} L',
+            subtitle:
+                '${_fmtLiters(data.waterLiters)} / ${DailyDataService.waterLitersTarget.toStringAsFixed(1)} L',
             icon: Icons.water_drop_outlined,
             completed: data.waterLiters >= DailyDataService.waterLitersTarget,
             disabled: completedToday,
@@ -110,6 +97,11 @@ class DailyActionsSection extends StatelessWidget {
               hint: 'Ej: 2.5',
               initial: data.waterLiters,
               onSave: onSetWaterLiters,
+            ),
+            trailing: _WaterTrailing(
+              liters: data.waterLiters,
+              disabled: completedToday,
+              onAdd250ml: onAddWater250ml,
             ),
           ),
           const SizedBox(height: 10),
@@ -123,14 +115,23 @@ class DailyActionsSection extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _ActionCard(
-            title: 'Estiramientos',
-            subtitle: data.stretchesDone ? 'Hecho' : 'Marcar como hecho',
+            title: 'Meditación',
+            subtitle:
+                '${data.meditationMinutes} / ${DailyDataService.meditationMinutesTarget} min',
             icon: Icons.self_improvement_outlined,
-            completed: data.stretchesDone,
+            completed: data.meditationMinutes >= DailyDataService.meditationMinutesTarget,
             disabled: completedToday,
-            onTap: () async {
-              await onToggleStretches();
-            },
+            onTap: () => _editInt(
+              context: context,
+              title: 'Meditación (minutos)',
+              hint: 'Ej: 10',
+              initial: data.meditationMinutes,
+              onSave: onSetMeditationMinutes,
+            ),
+            trailing: _QuickSmallButton(
+              label: '+5 min',
+              onTap: completedToday ? null : () async => onAddMeditation(),
+            ),
           ),
           const SizedBox(height: 14),
           Row(
@@ -149,10 +150,7 @@ class DailyActionsSection extends StatelessWidget {
               const SizedBox(width: 10),
               Text(
                 '$done/$total',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -187,7 +185,6 @@ class DailyActionsSection extends StatelessWidget {
     if (completedToday) return;
 
     final controller = TextEditingController(text: initial <= 0 ? '' : '$initial');
-
     final result = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -207,23 +204,16 @@ class DailyActionsSection extends StatelessWidget {
                   TextField(
                     controller: controller,
                     keyboardType: const TextInputType.numberWithOptions(decimal: false, signed: false),
-                    decoration: InputDecoration(
-                      hintText: hint,
-                      border: const OutlineInputBorder(),
-                    ),
+                    decoration: InputDecoration(hintText: hint, border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {
-                        final v = int.tryParse(controller.text.trim());
-                        Navigator.of(ctx).pop(v ?? 0);
-                      },
+                      onPressed: () => Navigator.of(ctx).pop(int.tryParse(controller.text.trim()) ?? 0),
                       child: const Text('Guardar'),
                     ),
                   ),
-                  const SizedBox(height: 6),
                 ],
               ),
             ),
@@ -245,10 +235,7 @@ class DailyActionsSection extends StatelessWidget {
   }) async {
     if (completedToday) return;
 
-    final controller = TextEditingController(
-      text: initial <= 0 ? '' : initial.toStringAsFixed(2),
-    );
-
+    final controller = TextEditingController(text: initial <= 0 ? '' : initial.toStringAsFixed(2));
     final result = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
@@ -268,10 +255,7 @@ class DailyActionsSection extends StatelessWidget {
                   TextField(
                     controller: controller,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-                    decoration: InputDecoration(
-                      hintText: hint,
-                      border: const OutlineInputBorder(),
-                    ),
+                    decoration: InputDecoration(hintText: hint, border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -279,13 +263,11 @@ class DailyActionsSection extends StatelessWidget {
                     child: FilledButton(
                       onPressed: () {
                         final raw = controller.text.trim().replaceAll(',', '.');
-                        final v = double.tryParse(raw);
-                        Navigator.of(ctx).pop(v ?? 0.0);
+                        Navigator.of(ctx).pop(double.tryParse(raw) ?? 0.0);
                       },
                       child: const Text('Guardar'),
                     ),
                   ),
-                  const SizedBox(height: 6),
                 ],
               ),
             ),
@@ -313,6 +295,7 @@ class _ActionCard extends StatelessWidget {
     required this.completed,
     required this.disabled,
     required this.onTap,
+    this.trailing,
   });
 
   final String title;
@@ -321,11 +304,10 @@ class _ActionCard extends StatelessWidget {
   final bool completed;
   final bool disabled;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
-    final fg = disabled ? CFColors.textSecondary : CFColors.textPrimary;
-
     return Material(
       color: CFColors.surface,
       child: InkWell(
@@ -358,47 +340,101 @@ class _ActionCard extends StatelessWidget {
                       title,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             fontWeight: FontWeight.w900,
-                            color: fg,
                           ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: CFColors.textSecondary,
-                          ),
-                    ),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: completed ? CFColors.primary.withValues(alpha: 0.12) : CFColors.softGray,
-                  borderRadius: const BorderRadius.all(Radius.circular(12)),
-                  border: Border.all(
-                    color: completed
-                        ? CFColors.primary.withValues(alpha: 0.26)
-                        : CFColors.softGray,
-                  ),
-                ),
-                child: Icon(
-                  completed ? Icons.check : Icons.add,
-                  color: completed ? CFColors.primary : CFColors.textSecondary,
-                  size: 18,
-                ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ],
+              const SizedBox(width: 8),
+              Icon(
+                completed ? Icons.check_circle : Icons.chevron_right,
+                color: completed ? CFColors.primary : CFColors.textSecondary,
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _QuickSmallButton extends StatelessWidget {
+  const _QuickSmallButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      onPressed: onTap,
+      style: FilledButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        backgroundColor: CFColors.primary.withValues(alpha: 0.12),
+        foregroundColor: CFColors.primary,
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+}
+
+class _WaterTrailing extends StatelessWidget {
+  const _WaterTrailing({
+    required this.liters,
+    required this.disabled,
+    required this.onAdd250ml,
+  });
+
+  final double liters;
+  final bool disabled;
+  final Future<void> Function() onAdd250ml;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = (liters / DailyDataService.waterLitersTarget).clamp(0, 1).toDouble();
+    final pct = (ratio * 100).round();
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 34,
+          height: 34,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: ratio,
+                strokeWidth: 4,
+                backgroundColor: CFColors.softGray,
+                valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+              ),
+              Text(
+                '$pct%',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        _QuickSmallButton(
+          label: '+250ml',
+          onTap: disabled ? null : () async => onAdd250ml(),
+        ),
+      ],
     );
   }
 }
