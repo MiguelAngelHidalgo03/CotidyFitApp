@@ -24,10 +24,15 @@ class WorkoutSessionService {
     return name != null;
   }
 
-  Future<void> markWorkoutCompleted({required String dateKey, required String workoutName}) async {
+  Future<void> markWorkoutCompleted({
+    required String dateKey,
+    required String workoutName,
+    Map<String, Object?>? completionData,
+  }) async {
     await _history.upsertCompletedWorkoutForDate(
       dateKey: dateKey,
       workoutName: workoutName,
+      completionData: completionData,
     );
   }
 
@@ -35,12 +40,19 @@ class WorkoutSessionService {
     return _history.getCompletedWorkoutName(dateKey);
   }
 
-  Future<void> completeWorkoutAndApplyBonus({required Workout workout}) async {
+  Future<void> completeWorkoutAndApplyBonus({
+    required Workout workout,
+    Map<String, Object?>? completionData,
+  }) async {
     final now = DateTime.now();
     final dateKey = DateUtilsCF.toKey(now);
 
     // Mark completion.
-    await markWorkoutCompleted(dateKey: dateKey, workoutName: workout.name);
+    await markWorkoutCompleted(
+      dateKey: dateKey,
+      workoutName: workout.name,
+      completionData: completionData,
+    );
 
     // Compute today's base CF.
     final entry = await _storage.getTodayEntry();

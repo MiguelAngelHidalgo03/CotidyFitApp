@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../models/exercise.dart';
 import '../models/user_profile.dart';
 import '../models/workout.dart';
 import '../services/profile_service.dart';
@@ -24,6 +25,7 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
   final Set<WorkoutGoal> _goals = {};
   final Set<WorkoutDifficulty> _difficulties = {};
   final Set<WorkoutDurationFilter> _durations = {};
+  final Set<MuscleGroup> _muscles = {};
 
   bool _loading = true;
   String? _error;
@@ -149,6 +151,7 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
       goals: _goals,
       difficulties: _difficulties,
       durations: _durations,
+      muscleGroups: _muscles,
     );
 
     final workouts = _all.where((w) => w.matchesFilters(filters)).toList();
@@ -239,6 +242,19 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
                   });
                 },
               ),
+              const SizedBox(height: 12),
+              _FilterGroup<MuscleGroup>(
+                title: 'Músculo',
+                values: MuscleGroup.values,
+                selected: _muscles,
+                labelFor: (v) => v.label,
+                iconFor: (v) => v.icon,
+                onToggle: (v) {
+                  setState(() {
+                    _muscles.contains(v) ? _muscles.remove(v) : _muscles.add(v);
+                  });
+                },
+              ),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -274,6 +290,7 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
                       _goals.clear();
                       _difficulties.clear();
                       _durations.clear();
+                      _muscles.clear();
                     });
                   },
                   icon: const Icon(Icons.refresh),

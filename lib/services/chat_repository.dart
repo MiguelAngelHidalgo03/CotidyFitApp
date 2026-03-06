@@ -10,6 +10,7 @@ abstract class ChatRepository {
     required String chatId,
     required MessageType type,
     required String text,
+    Map<String, Object?>? share,
   });
 
   Future<void> seedIfEmpty();

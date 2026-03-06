@@ -101,6 +101,7 @@ class CommunityChatLocalService implements ChatRepository {
     required String chatId,
     required MessageType type,
     required String text,
+    Map<String, Object?>? share,
   }) async {
     final cleaned = text.trim();
     final chats = await _loadChats();
@@ -119,6 +120,7 @@ class CommunityChatLocalService implements ChatRepository {
       isMine: true,
       type: type,
       text: cleaned,
+      share: share,
       createdAtMs: now,
     );
 

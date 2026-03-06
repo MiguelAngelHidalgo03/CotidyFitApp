@@ -2,8 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'location_permission_service.dart';
 
 class PushTokenService {
+  static const _kLocationPermissionPrompted = 'cf_location_permission_prompted_v1';
+
   final FirebaseAuth _auth;
   final FirebaseFirestore _db;
   final FirebaseMessaging _messaging;
@@ -30,6 +36,10 @@ class PushTokenService {
     } catch (_) {
       // best-effort
     }
+
+    // Ask for location permission once so Home can show location + weather.
+    // (Requested by UX: prompt location alongside notifications on install.)
+    await _requestLocationPermissionOnce();
 
     String? token;
     try {
@@ -86,5 +96,30 @@ class PushTokenService {
         // best-effort
       },
     );
+  }
+
+  Future<void> _requestLocationPermissionOnce() async {
+    if (kIsWeb) return;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_kLocationPermissionPrompted) == true) return;
+
+    try {
+      // Give the OS a moment in case a notification dialog just appeared.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      final current = await Geolocator.checkPermission();
+      if (current == LocationPermission.denied) {
+        await LocationPermissionService.ensurePermission();
+      }
+    } catch (_) {
+      // best-effort
+    } finally {
+      await prefs.setBool(_kLocationPermissionPrompted, true);
+    }
   }
 }

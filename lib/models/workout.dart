@@ -163,12 +163,14 @@ class WorkoutFilters {
   final Set<WorkoutGoal> goals;
   final Set<WorkoutDifficulty> difficulties;
   final Set<WorkoutDurationFilter> durations;
+  final Set<MuscleGroup> muscleGroups;
 
   const WorkoutFilters({
     required this.places,
     required this.goals,
     required this.difficulties,
     required this.durations,
+    required this.muscleGroups,
   });
 }
 
@@ -211,11 +213,16 @@ class Workout {
     this.recommendedProfileTags = const [],
   });
 
+  Set<MuscleGroup> get muscleGroups => {
+        for (final e in exercises) e.muscleGroup,
+      };
+
   bool matchesFilters(WorkoutFilters f) {
     final placeOk = f.places.isEmpty || places.any(f.places.contains);
     final goalOk = f.goals.isEmpty || goals.any(f.goals.contains);
     final diffOk = f.difficulties.isEmpty || f.difficulties.contains(difficulty);
     final durOk = f.durations.isEmpty || f.durations.any((d) => d.matchesMinutes(durationMinutes));
-    return placeOk && goalOk && diffOk && durOk;
+    final muscleOk = f.muscleGroups.isEmpty || exercises.any((e) => f.muscleGroups.contains(e.muscleGroup));
+    return placeOk && goalOk && diffOk && durOk && muscleOk;
   }
 }

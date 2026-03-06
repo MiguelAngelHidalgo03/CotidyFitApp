@@ -35,6 +35,10 @@ class MessageModel {
 
   final MessageType type;
   final String text;
+  /// Extra structured data for rich share messages.
+  ///
+  /// Kept optional for backward compatibility.
+  final Map<String, Object?>? share;
   final int createdAtMs;
 
   const MessageModel({
@@ -45,6 +49,7 @@ class MessageModel {
     required this.isMine,
     required this.type,
     required this.text,
+    this.share,
     required this.createdAtMs,
   });
 
@@ -56,6 +61,7 @@ class MessageModel {
         'isMine': isMine,
         'type': type.name,
         'text': text,
+      if (share != null) 'share': share,
         'createdAtMs': createdAtMs,
       };
 
@@ -66,6 +72,7 @@ class MessageModel {
     final senderName = json['senderName'];
     final typeRaw = json['type'];
     final text = json['text'];
+    final shareRaw = json['share'];
     final createdAtMs = json['createdAtMs'];
 
     if (id is! String || id.trim().isEmpty) return null;
@@ -82,6 +89,11 @@ class MessageModel {
       }
     }
 
+    Map<String, Object?>? share;
+    if (shareRaw is Map) {
+      share = shareRaw.map((k, v) => MapEntry(k.toString(), v));
+    }
+
     return MessageModel(
       id: id.trim(),
       chatId: chatId.trim(),
@@ -90,7 +102,12 @@ class MessageModel {
       isMine: json['isMine'] is bool ? json['isMine'] as bool : false,
       type: type,
       text: text,
-      createdAtMs: createdAtMs is int ? createdAtMs : DateTime.now().millisecondsSinceEpoch,
+      share: share,
+      createdAtMs: createdAtMs is int
+          ? createdAtMs
+          : (createdAtMs is num
+                ? createdAtMs.toInt()
+                : DateTime.now().millisecondsSinceEpoch),
     );
   }
 }

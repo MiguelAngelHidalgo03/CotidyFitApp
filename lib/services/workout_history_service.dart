@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class WorkoutHistoryService {
   // Must match WorkoutSessionService internal key.
   static const _kCompletedWorkoutsByDateKey = 'cf_completed_workouts_by_date_json';
+  static const _kCompletedWorkoutIdsByDateKey = 'cf_completed_workout_ids_by_date_json';
   static const _kCloudMigrationPrefix =
       'cf_completed_workouts_cloud_migrated_v1_';
 
@@ -68,9 +69,38 @@ class WorkoutHistoryService {
     return out;
   }
 
+  Future<Map<String, String>> getCompletedWorkoutIdsByDate() async {
+    final uid = _uid;
+    if (uid != null) {
+      await _migrateLocalHistoryToCloudIfNeeded(uid);
+
+      final qs = await _historyColForUid(uid).get();
+      final out = <String, String>{};
+      for (final doc in qs.docs) {
+        final data = doc.data();
+
+        final workoutId = (data['workoutId'] as String?)?.trim() ?? '';
+        if (workoutId.isEmpty) continue;
+
+        final dateKeyRaw = data['dateKey'];
+        final dateKey = dateKeyRaw is String && dateKeyRaw.trim().isNotEmpty
+            ? dateKeyRaw
+            : doc.id;
+
+        out[dateKey] = workoutId;
+      }
+
+      await _cacheIdsMapLocally(out);
+      return out;
+    }
+
+    return _readLocalIdsMap();
+  }
+
   Future<void> upsertCompletedWorkoutForDate({
     required String dateKey,
     required String workoutName,
+    Map<String, Object?>? completionData,
   }) async {
     final key = dateKey.trim();
     final name = workoutName.trim();
@@ -78,16 +108,27 @@ class WorkoutHistoryService {
 
     final uid = _uid;
     if (uid != null) {
-      await _historyColForUid(uid).doc(key).set({
-        'dateKey': key,
-        'workoutName': name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _historyColForUid(uid).doc(key).set(
+        {
+          'dateKey': key,
+          'workoutName': name,
+          'updatedAt': FieldValue.serverTimestamp(),
+          if (completionData != null) ...completionData,
+        },
+        SetOptions(merge: true),
+      );
     }
 
     final map = await _readLocalMap();
     map[key] = name;
     await _cacheMapLocally(map);
+
+    final workoutId = completionData?['workoutId'];
+    if (workoutId is String && workoutId.trim().isNotEmpty) {
+      final ids = await _readLocalIdsMap();
+      ids[key] = workoutId.trim();
+      await _cacheIdsMapLocally(ids);
+    }
   }
 
   Future<String?> getCompletedWorkoutName(String dateKey) async {
@@ -105,6 +146,14 @@ class WorkoutHistoryService {
           final map = await _readLocalMap();
           map[key] = name.trim();
           await _cacheMapLocally(map);
+
+          final workoutId = (data?['workoutId'] as String?)?.trim();
+          if (workoutId != null && workoutId.isNotEmpty) {
+            final ids = await _readLocalIdsMap();
+            ids[key] = workoutId;
+            await _cacheIdsMapLocally(ids);
+          }
+
           return name.trim();
         }
       }
@@ -134,6 +183,28 @@ class WorkoutHistoryService {
   Future<void> _cacheMapLocally(Map<String, String> map) async {
     final p = await _prefs();
     await p.setString(_kCompletedWorkoutsByDateKey, jsonEncode(map));
+  }
+
+  Future<Map<String, String>> _readLocalIdsMap() async {
+    final p = await _prefs();
+    final raw = p.getString(_kCompletedWorkoutIdsByDateKey);
+    if (raw == null || raw.trim().isEmpty) return {};
+
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return {};
+
+    final out = <String, String>{};
+    for (final e in decoded.entries) {
+      final k = e.key;
+      final v = e.value;
+      if (k is String && v is String) out[k] = v;
+    }
+    return out;
+  }
+
+  Future<void> _cacheIdsMapLocally(Map<String, String> map) async {
+    final p = await _prefs();
+    await p.setString(_kCompletedWorkoutIdsByDateKey, jsonEncode(map));
   }
 
   Future<void> _migrateLocalHistoryToCloudIfNeeded(String uid) async {

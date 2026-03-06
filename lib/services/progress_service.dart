@@ -1,3 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+
 import '../models/cf_history_point.dart';
 import '../models/daily_entry.dart';
 import '../utils/date_utils.dart';
@@ -16,14 +20,59 @@ class ProgressData {
 }
 
 class ProgressService {
-  ProgressService({required LocalStorageService storage}) : _storage = storage;
+  ProgressService({
+    required LocalStorageService storage,
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+  })  : _storage = storage,
+        _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
   final LocalStorageService _storage;
+  final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
+
+  bool get _ready => Firebase.apps.isNotEmpty;
+  String? get _uid => _ready ? _auth.currentUser?.uid : null;
 
   Future<ProgressData> loadProgress({int days = 7}) async {
     final now = DateTime.now();
     final today = DateUtilsCF.dateOnly(now);
-    final history = await _storage.getCfHistory();
+    var history = await _storage.getCfHistory();
+
+    final uid = _uid;
+    if (uid != null) {
+      try {
+        final from = today.subtract(Duration(days: days + 45));
+        final qs = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('dailyStats')
+            .where('dateKey', isGreaterThanOrEqualTo: DateUtilsCF.toKey(from))
+            .orderBy('dateKey')
+            .get();
+
+        if (qs.docs.isNotEmpty) {
+          history = {...history};
+          for (final doc in qs.docs) {
+            final data = doc.data();
+            final key = (data['dateKey'] as String? ?? doc.id).trim();
+            if (key.isEmpty) continue;
+            final raw = data['cfIndex'];
+            final v = raw is int
+                ? raw
+                : raw is num
+                    ? raw.round()
+                    : int.tryParse(raw?.toString() ?? '');
+            if (v == null) continue;
+            history[key] = v.clamp(0, 100);
+            await _storage.upsertCfForDate(dateKey: key, cf: v);
+          }
+        }
+      } catch (_) {
+        // Keep local fallback.
+      }
+    }
 
     final points = <CfHistoryPoint>[];
     for (var i = days - 1; i >= 0; i--) {

@@ -20,6 +20,18 @@ class ProgressWeekSummary {
     required this.proteinPerMealG,
     required this.nutritionLabel,
     required this.nutritionMessage,
+    required this.proteinTargetDailyG,
+    required this.carbsTargetDailyG,
+    required this.fatTargetDailyG,
+    required this.proteinCompliancePercent,
+    required this.carbsCompliancePercent,
+    required this.fatCompliancePercent,
+    required this.nutritionAdjustments,
+    required this.todayMealsLogged,
+    required this.todayCalories,
+    required this.todayCaloriesTarget,
+    required this.todayRecommendation,
+    required this.todayNeedsNutritionAction,
   });
 
   final DateTime weekStart;
@@ -48,4 +60,20 @@ class ProgressWeekSummary {
   /// One of: "Baja proteína", "Irregularidad", "Buena consistencia".
   final String nutritionLabel;
   final String nutritionMessage;
+
+  final int proteinTargetDailyG;
+  final int carbsTargetDailyG;
+  final int fatTargetDailyG;
+
+  final int proteinCompliancePercent;
+  final int carbsCompliancePercent;
+  final int fatCompliancePercent;
+
+  final List<String> nutritionAdjustments;
+
+  final int todayMealsLogged;
+  final int todayCalories;
+  final int todayCaloriesTarget;
+  final String todayRecommendation;
+  final bool todayNeedsNutritionAction;
 }

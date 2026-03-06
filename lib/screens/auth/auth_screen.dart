@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
@@ -41,17 +44,78 @@ class _AuthScreenState extends State<AuthScreen> {
     if (e is AuthLinkRequiredException) {
       return 'Tu email ya existe con contraseña. Vincula Google iniciando sesión.';
     }
-    if (e is Exception) {
-      final s = e.toString();
-      if (s.contains('ApiException: 10') || s.contains('DEVELOPER_ERROR')) {
-        return 'Google Sign-In no está configurado (SHA-1 / google-services.json).';
-      }
-      if (s.contains('wrong-password') || s.contains('invalid-credential')) return 'Credenciales incorrectas.';
-      if (s.contains('user-not-found')) return 'No existe una cuenta con ese email.';
-      if (s.contains('email-already-in-use')) return 'Ese email ya está registrado.';
-      if (s.contains('weak-password')) return 'La contraseña es demasiado débil.';
-      if (s.contains('invalid-email')) return 'Email no válido.';
+    if (e is AuthGoogleConfigurationException) {
+      return 'Google Sign-In no está configurado (SHA-1/SHA-256 y google-services.json).';
     }
+    if (e is AuthGoogleTransientException) {
+      return 'No se pudo contactar con Google. Revisa tu conexión e inténtalo de nuevo.';
+    }
+    if (e is AuthPasskeyException) {
+      return 'Tu passkey falló en este dispositivo/emulador. Usa contraseña o prueba en un móvil real.';
+    }
+
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'operation-not-allowed':
+          return 'El acceso con Google no está habilitado en Firebase Auth (Métodos de acceso).';
+        case 'user-disabled':
+          return 'Esta cuenta está deshabilitada.';
+        case 'wrong-password':
+        case 'invalid-credential':
+          return 'Credenciales incorrectas.';
+        case 'user-not-found':
+          return 'No existe una cuenta con ese email.';
+        case 'email-already-in-use':
+          return 'Ese email ya está registrado.';
+        case 'weak-password':
+          return 'La contraseña es demasiado débil.';
+        case 'invalid-email':
+          return 'Email no válido.';
+        case 'network-request-failed':
+          return 'Sin conexión. Verifica internet e inténtalo otra vez.';
+        case 'too-many-requests':
+          return 'Demasiados intentos. Espera un momento y vuelve a intentarlo.';
+      }
+    }
+
+    if (e is PlatformException) {
+      final s = '${e.code} ${e.message ?? ''}'.toLowerCase();
+      if (s.contains('apiexception: 10') || s.contains('developer_error') || s.contains('12500')) {
+        return 'Google Sign-In no está configurado (SHA-1/SHA-256 y google-services.json).';
+      }
+      if (s.contains('network') || s.contains('timeout') || s.contains('network_error')) {
+        return 'Error de red con Google. Inténtalo de nuevo.';
+      }
+      if (s.contains('canceled') || s.contains('cancelled') || s.contains('12501')) {
+        return 'Acceso cancelado.';
+      }
+      if (s.contains('passkey') || s.contains('webauthn') || s.contains('publickeycredential')) {
+        return 'Tu passkey falló en este dispositivo/emulador. Usa contraseña o prueba en un móvil real.';
+      }
+      if (s.contains('sign_in_failed') || s.contains('apiexception')) {
+        return 'No se pudo iniciar sesión con Google. Revisa Google Play Services y la configuración (SHA-1/SHA-256 en Firebase).';
+      }
+    }
+
+    final raw = e.toString().toLowerCase();
+    if (raw.contains('apiexception: 10') || raw.contains('developer_error') || raw.contains('12500')) {
+      return 'Google Sign-In no está configurado (SHA-1/SHA-256 y google-services.json).';
+    }
+    if (raw.contains('network_error') || raw.contains('network request failed') || raw.contains('timeout')) {
+      return 'Error de red. Inténtalo de nuevo en unos segundos.';
+    }
+    if (raw.contains('passkey') || raw.contains('webauthn') || raw.contains('publickeycredential')) {
+      return 'Tu passkey falló en este dispositivo/emulador. Usa contraseña o prueba en un móvil real.';
+    }
+
+    if (raw.contains('sign_in_failed') || raw.contains('google') || raw.contains('apiexception')) {
+      return 'No se pudo iniciar sesión con Google. Revisa Google Play Services y la configuración (SHA-1/SHA-256 en Firebase).';
+    }
+
+    if (kDebugMode) {
+      return 'Error: ${e.toString()}';
+    }
+
     return 'Ha ocurrido un error. Inténtalo de nuevo.';
   }
 

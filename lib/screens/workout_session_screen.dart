@@ -9,6 +9,10 @@ import '../models/workout.dart';
 import '../services/workout_session_service.dart';
 import '../services/workout_sound_service.dart';
 
+enum _CountdownKind { exercise, rest }
+
+enum _RestKind { betweenSets, betweenExercises }
+
 class WorkoutSessionScreen extends StatefulWidget {
   const WorkoutSessionScreen({super.key, required this.workout});
 
@@ -20,14 +24,18 @@ class WorkoutSessionScreen extends StatefulWidget {
 
 class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   int _index = 0;
+  int _setIndex = 0;
   bool _isSummary = false;
   bool _saving = false;
 
   Timer? _timer;
   bool _isRunning = false;
-  int? _initialSeconds;
+  _CountdownKind? _countdownKind;
+  _RestKind? _restKind;
   int? _remainingSeconds;
   int? _selectedVariantIndex;
+
+  final Map<int, double> _weightKgByExerciseIndex = {};
 
   Exercise get _current => widget.workout.exercises[_index];
 
@@ -52,9 +60,14 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   void _setupForCurrentExercise() {
     _timer?.cancel();
     _isRunning = false;
+    _countdownKind = null;
+    _restKind = null;
+    _setIndex = 0;
 
-    final seconds = _parseSeconds(_current.repsOrTime);
-    _initialSeconds = seconds;
+    final seconds = _current.durationSeconds ?? _parseSeconds(_current.repsOrTime);
+    if (seconds != null) {
+      _countdownKind = _CountdownKind.exercise;
+    }
     _remainingSeconds = seconds;
     _selectedVariantIndex = null;
     setState(() {});
@@ -104,6 +117,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   }
 
   void _toggleTimer() {
+    if (_countdownKind != _CountdownKind.exercise) return;
     if (_remainingSeconds == null) return;
 
     if (_isRunning) {
@@ -139,8 +153,156 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     });
   }
 
+  int _restSecondsFor(Exercise ex) {
+    final s = ex.restSeconds;
+    if (s != null && s > 0) return s;
+    return 60;
+  }
+
+  void _startRest({required _RestKind kind, required int seconds}) {
+    _timer?.cancel();
+    _restKind = kind;
+    _countdownKind = _CountdownKind.rest;
+    _remainingSeconds = seconds;
+    _isRunning = true;
+    setState(() {});
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+
+      final current = _remainingSeconds ?? 0;
+      final next = current - 1;
+      if (next <= 0) {
+        _timer?.cancel();
+        setState(() {
+          _remainingSeconds = 0;
+          _isRunning = false;
+        });
+
+        // ignore: discarded_futures
+        WorkoutSoundService().playSelectedEndSound();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Descanso finalizado.')),
+        );
+
+        final restKind = _restKind;
+        _restKind = null;
+        _countdownKind = null;
+        _remainingSeconds = null;
+
+        if (restKind == _RestKind.betweenSets) {
+          setState(() => _setIndex += 1);
+          return;
+        }
+
+        if (restKind == _RestKind.betweenExercises) {
+          if (_index >= widget.workout.exercises.length - 1) {
+            _timer?.cancel();
+            setState(() {
+              _isSummary = true;
+              _isRunning = false;
+            });
+            return;
+          }
+          setState(() => _index += 1);
+          _setupForCurrentExercise();
+        }
+        return;
+      }
+
+      setState(() => _remainingSeconds = next);
+    });
+  }
+
+  Future<double?> _promptWeightKg({required Exercise exercise}) async {
+    final ctrl = TextEditingController();
+    double? parsed;
+
+    final result = await showDialog<double?>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final canSave = parsed != null && parsed! > 0;
+            return AlertDialog(
+              title: Text('Peso usado (${exercise.name})'),
+              content: TextField(
+                controller: ctrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: false,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Ej. 20',
+                  suffixText: 'kg',
+                ),
+                onChanged: (v) {
+                  final cleaned = v.trim().replaceAll(',', '.');
+                  setDialogState(() => parsed = double.tryParse(cleaned));
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(null),
+                  child: const Text('Omitir'),
+                ),
+                FilledButton(
+                  onPressed: canSave ? () => Navigator.of(context).pop(parsed) : null,
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    return result;
+  }
+
+  Future<void> _completeRepBasedExercise() async {
+    if (_isSummary) return;
+    if (_countdownKind == _CountdownKind.rest) return;
+
+    final ex = _current;
+    final totalExercises = widget.workout.exercises.length;
+
+    final sets = (ex.sets != null && ex.sets! > 0) ? ex.sets! : 1;
+    final restSeconds = _restSecondsFor(ex);
+
+    if (_setIndex < sets - 1) {
+      _startRest(kind: _RestKind.betweenSets, seconds: restSeconds);
+      return;
+    }
+
+    final weightKg = await _promptWeightKg(exercise: ex);
+    if (weightKg != null) {
+      _weightKgByExerciseIndex[_index] = weightKg;
+    }
+
+    final msg = _exerciseMotivation[_index % _exerciseMotivation.length];
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+      );
+    }
+
+    if (_index >= totalExercises - 1) {
+      _timer?.cancel();
+      setState(() {
+        _isSummary = true;
+        _isRunning = false;
+      });
+      return;
+    }
+
+    _startRest(kind: _RestKind.betweenExercises, seconds: restSeconds);
+  }
+
   void _markCompleted() {
     if (_isSummary) return;
+
+    if (_countdownKind == _CountdownKind.rest) return;
 
     final msg = _exerciseMotivation[_index % _exerciseMotivation.length];
     ScaffoldMessenger.of(context).showSnackBar(
@@ -165,7 +327,29 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
     setState(() => _saving = true);
     try {
-      await WorkoutSessionService().completeWorkoutAndApplyBonus(workout: widget.workout);
+      final exerciseLogs = <Map<String, Object?>>[];
+      for (var i = 0; i < widget.workout.exercises.length; i++) {
+        final w = _weightKgByExerciseIndex[i];
+        if (w == null) continue;
+        final ex = widget.workout.exercises[i];
+        exerciseLogs.add({
+          'order': i,
+          'name': ex.name,
+          'sets': ex.sets,
+          'reps': ex.reps,
+          'weightKg': w,
+          'muscleGroup': ex.muscleGroup.firestoreKey,
+        });
+      }
+
+      await WorkoutSessionService().completeWorkoutAndApplyBonus(
+        workout: widget.workout,
+        completionData: {
+          'workoutId': widget.workout.id,
+          'durationMinutes': widget.workout.durationMinutes,
+          if (exerciseLogs.isNotEmpty) 'exerciseLogs': exerciseLogs,
+        },
+      );
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } finally {
@@ -192,8 +376,12 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     final theme = Theme.of(context);
     final total = widget.workout.exercises.length;
     final ex = _current;
-    final seconds = _initialSeconds;
+    final seconds = ex.durationSeconds ?? _parseSeconds(ex.repsOrTime);
     final hasVariants = ex.variants.isNotEmpty;
+    final isResting = _countdownKind == _CountdownKind.rest;
+    final sets = (ex.sets != null && ex.sets! > 0) ? ex.sets! : 1;
+    final reps = ex.reps;
+    final isRepBased = seconds == null && reps != null;
     final selectedVariant = (_selectedVariantIndex != null &&
             _selectedVariantIndex! >= 0 &&
             _selectedVariantIndex! < ex.variants.length)
@@ -261,7 +449,19 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              Text(ex.repsOrTime, style: theme.textTheme.titleMedium),
+              Text(
+                (isRepBased ? '$sets x $reps' : ex.repsOrTime),
+                style: theme.textTheme.titleMedium,
+              ),
+              if (isRepBased && !isResting) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Serie ${_setIndex + 1} de $sets',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: CFColors.textSecondary,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               Text(
                 description,
@@ -293,7 +493,35 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                       ),
                   ],
                 ),
-              if (seconds != null) ...[
+              if (isResting) ...[
+                const SizedBox(height: 14),
+                Text(
+                  'Descanso',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: CFColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _format(_remainingSeconds ?? 0),
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: CFColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _restKind == _RestKind.betweenSets
+                      ? 'Siguiente serie: ${(_setIndex + 2).clamp(1, sets)} de $sets'
+                      : (_index < total - 1
+                          ? 'Siguiente ejercicio: ${widget.workout.exercises[_index + 1].name}'
+                          : 'Siguiente ejercicio'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: CFColors.textSecondary,
+                  ),
+                ),
+              ] else if (seconds != null) ...[
                 const SizedBox(height: 14),
                 Text(
                   _format(_remainingSeconds ?? seconds),
@@ -307,7 +535,9 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
           ),
         ),
         const Spacer(),
-        if (seconds != null) ...[
+        if (isResting) ...[
+          const SizedBox(height: 6),
+        ] else if (seconds != null) ...[
           Row(
             children: [
               Expanded(
@@ -324,6 +554,18 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                 ),
               ),
             ],
+          ),
+        ] else if (isRepBased) ...[
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _completeRepBasedExercise,
+              child: Text(
+                (_setIndex < sets - 1)
+                    ? 'Serie completada'
+                    : (_index == total - 1 ? 'Finalizar' : 'Ejercicio completado'),
+              ),
+            ),
           ),
         ] else ...[
           SizedBox(
@@ -360,6 +602,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
             separatorBuilder: (context, index) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final ex = widget.workout.exercises[index];
+              final weight = _weightKgByExerciseIndex[index];
               return Container(
                 decoration: BoxDecoration(
                   color: CFColors.surface,
@@ -378,7 +621,11 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Text(ex.repsOrTime, style: theme.textTheme.bodyMedium),
+                    Text(
+                      '${ex.repsOrTime}${weight == null ? '' : ' · ${weight.toStringAsFixed(weight % 1 == 0 ? 0 : 1)} kg'}',
+                      style: theme.textTheme.bodyMedium,
+                      textAlign: TextAlign.end,
+                    ),
                   ],
                 ),
               );

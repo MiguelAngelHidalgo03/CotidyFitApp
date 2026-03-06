@@ -1,9 +1,9 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../models/weight_entry.dart';
 import 'progress_section_card.dart';
-import 'progress_sparkline.dart';
 
 class ProgressWeightSummaryCard extends StatelessWidget {
   const ProgressWeightSummaryCard({
@@ -61,67 +61,151 @@ class ProgressWeightSummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          Text(
+            'Peso actual',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            weightText,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+          ),
+          const SizedBox(height: 10),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Peso actual',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      weightText,
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DeltaPill(
-                            label: 'Semanal',
-                            deltaKg: weekDiffKg,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DeltaPill(
-                            label: 'Mensual',
-                            deltaKg: monthDiffKg,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: _DeltaPill(
+                  label: 'Semanal',
+                  deltaKg: weekDiffKg,
                 ),
               ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 130,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Últimos 30 días',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    ProgressSparkline(
-                      values: values,
-                      height: 56,
-                      lineColor: CFColors.primary,
-                    ),
-                  ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DeltaPill(
+                  label: 'Mensual',
+                  deltaKg: monthDiffKg,
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Text(
+            'Evolución (últimos 30 días)',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 180,
+            child: _WeightLineChart(values: values),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _WeightLineChart extends StatelessWidget {
+  const _WeightLineChart({required this.values});
+
+  final List<double> values;
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) {
+      return Container(
+        decoration: BoxDecoration(
+          color: CFColors.background,
+          borderRadius: const BorderRadius.all(Radius.circular(14)),
+          border: Border.all(color: CFColors.softGray),
+        ),
+        alignment: Alignment.center,
+        child: Text('Añade registros para ver la gráfica', style: Theme.of(context).textTheme.bodyMedium),
+      );
+    }
+
+    final spots = <FlSpot>[];
+    for (var i = 0; i < values.length; i++) {
+      spots.add(FlSpot(i.toDouble(), values[i]));
+    }
+
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final pad = ((max - min) * 0.15).clamp(0.3, 2.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: CFColors.background,
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        border: Border.all(color: CFColors.softGray),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 8, 12, 6),
+      child: LineChart(
+        LineChartData(
+          minX: 0,
+          maxX: (values.length - 1).toDouble(),
+          minY: (min - pad),
+          maxY: (max + pad),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: ((max - min).abs() < 0.8) ? 0.2 : 0.5,
+            getDrawingHorizontalLine: (_) => FlLine(color: CFColors.softGray, strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                interval: ((max - min).abs() < 0.8) ? 0.2 : 0.5,
+                getTitlesWidget: (value, _) => Text(value.toStringAsFixed(1), style: Theme.of(context).textTheme.bodySmall),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                getTitlesWidget: (value, _) {
+                  final i = value.toInt();
+                  final last = values.length - 1;
+                  String label = '';
+                  if (i == 0) label = 'Hace ${last}d';
+                  if (i == last ~/ 2) label = 'Mitad';
+                  if (i == last) label = 'Hoy';
+                  return Text(label, style: Theme.of(context).textTheme.bodySmall);
+                },
+              ),
+            ),
+          ),
+          lineTouchData: LineTouchData(
+            enabled: true,
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => CFColors.textPrimary,
+              getTooltipItems: (spots) => spots
+                  .map(
+                    (s) => LineTooltipItem(
+                      'Día ${s.x.toInt() + 1}\n${s.y.toStringAsFixed(1)} kg',
+                      const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: CFColors.primary,
+              barWidth: 3,
+              dotData: FlDotData(show: values.length <= 12),
+              belowBarData: BarAreaData(show: true, color: CFColors.primary.withValues(alpha: 0.10)),
+            ),
+          ],
+        ),
       ),
     );
   }

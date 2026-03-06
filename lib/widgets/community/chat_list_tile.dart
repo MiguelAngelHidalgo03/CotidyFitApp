@@ -29,7 +29,13 @@ class ChatListTile extends StatelessWidget {
       MessageType.diet => 'Dieta: ',
       MessageType.streaks => 'Rachas: ',
     };
-    return (prefix + m.text).trim();
+
+    final raw = m.text.trim();
+    final lines = raw.split('\n');
+    final body = lines.length <= 1 ? '' : lines.skip(1).join(' ').trim();
+    final text = body.isNotEmpty ? body : raw;
+
+    return (prefix + text).trim();
   }
 
   String _timeLabel(int ms) {

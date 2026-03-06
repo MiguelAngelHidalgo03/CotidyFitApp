@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/weight_entry.dart';
@@ -22,9 +25,46 @@ class WeightSummary {
 class WeightService {
   static const _kWeightHistoryKey = 'cf_weight_history_json';
 
+  final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
+
+  WeightService({FirebaseFirestore? db, FirebaseAuth? auth})
+      : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
+
+  bool get _ready => Firebase.apps.isNotEmpty;
+  String? get _uid => _ready ? _auth.currentUser?.uid : null;
+
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
   Future<List<WeightEntry>> getHistory() async {
+    final uid = _uid;
+    if (uid != null) {
+      try {
+        final qs = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('weightEntries')
+            .orderBy('dateKey')
+            .get();
+
+        final cloud = <WeightEntry>[];
+        for (final doc in qs.docs) {
+          final map = Map<String, Object?>.from(doc.data());
+          map['dateKey'] = (map['dateKey'] as String?) ?? doc.id;
+          final entry = WeightEntry.fromJson(map);
+          if (entry != null) cloud.add(entry);
+        }
+
+        if (cloud.isNotEmpty) {
+          await _saveLocalHistory(cloud);
+          return cloud;
+        }
+      } catch (_) {
+        // Fallback to local cache.
+      }
+    }
+
     final p = await _prefs();
     final raw = p.getString(_kWeightHistoryKey);
     if (raw == null || raw.trim().isEmpty) return const [];
@@ -67,7 +107,23 @@ class WeightService {
     }
 
     history.sort((a, b) => a.date.compareTo(b.date));
+    await _saveLocalHistory(history);
 
+    final uid = _uid;
+    if (uid != null) {
+      try {
+        await _db.collection('users').doc(uid).collection('weightEntries').doc(key).set({
+          'dateKey': key,
+          'weight': weight,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {
+        // Keep local write as fallback.
+      }
+    }
+  }
+
+  Future<void> _saveLocalHistory(List<WeightEntry> history) async {
     final raw = jsonEncode(history.map((e) => e.toJson()).toList());
     final p = await _prefs();
     await p.setString(_kWeightHistoryKey, raw);

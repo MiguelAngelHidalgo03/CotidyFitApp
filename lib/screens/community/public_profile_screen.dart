@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../services/block_service.dart';
+import '../../services/community_share_service.dart';
 import '../../services/friend_service.dart';
 import '../../services/social_firestore_service.dart';
 import '../profile_screen.dart';
@@ -22,6 +23,9 @@ class PublicProfileScreen extends StatefulWidget {
 class _PublicProfileScreenState extends State<PublicProfileScreen> {
   final _friends = FriendService();
   final _block = BlockService();
+  final _shareService = CommunityShareService();
+
+  bool _didSyncMyPublicStats = false;
 
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -91,6 +95,17 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     final ref = FirebaseFirestore.instance.collection('user_public').doc(uid);
     final me = FirebaseAuth.instance.currentUser?.uid;
     final isMe = me != null && me == uid;
+
+    if (isMe && !_didSyncMyPublicStats) {
+      _didSyncMyPublicStats = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        try {
+          await _shareService.syncMyPublicStatsBestEffort();
+        } catch (_) {
+          // Best-effort; ignore.
+        }
+      });
+    }
     final pairId = me == null
         ? null
         : SocialFirestoreService.pairIdFor(me, uid);
@@ -164,6 +179,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
             final maxStreak = _readInt(
               data['maxStreak'] ?? data['maxStreakDays'],
             );
+            final currentStreak = _readInt(
+              data['currentStreak'] ?? data['streak'] ?? data['streakDays'],
+            );
             final activeDays = _readInt(
               data['activeDays'] ?? data['daysActive'],
             );
@@ -173,6 +191,18 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
             final nutritionPct = _readDouble(
               data['nutritionCompliancePct'] ?? data['nutritionCompletedPct'],
             );
+
+            final lastWorkoutName =
+                (data['lastWorkoutName'] as String?)?.trim() ?? '';
+
+            final achievementsUnlocked = _readInt(
+              data['achievementsUnlocked'] ?? data['achievementsCount'],
+            );
+
+            final lastActive = data['lastActiveAt'];
+            final lastActiveMs = lastActive is Timestamp
+                ? lastActive.millisecondsSinceEpoch
+                : null;
 
             Widget statItem(String label, String value) {
               return Expanded(
@@ -466,32 +496,74 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
               );
             }
 
+            String lastActiveLabel(int? ms) {
+              if (ms == null) return '—';
+              final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+              final diff = DateTime.now().difference(dt);
+              if (diff.inMinutes <= 2) return 'En línea';
+              if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
+              if (diff.inHours < 24) return 'Hace ${diff.inHours} h';
+              if (diff.inDays < 7) return 'Hace ${diff.inDays} días';
+              final dd = dt.day.toString().padLeft(2, '0');
+              final mm = dt.month.toString().padLeft(2, '0');
+              return '$dd/$mm/${dt.year}';
+            }
+
+            final infoCards = <Widget>[];
+
+            if (lastActiveMs != null) {
+              infoCards.add(
+                section(
+                  title: 'Actividad',
+                  body: 'Última vez activo: ${lastActiveLabel(lastActiveMs)}',
+                ),
+              );
+            }
+
+            final streakLines = <String>[];
+            if (currentStreak != null) {
+              streakLines.add('Racha actual: $currentStreak días');
+            }
+            if (maxStreak != null) {
+              streakLines.add('Racha máx: $maxStreak días');
+            }
+            if (streakLines.isNotEmpty) {
+              infoCards.add(
+                section(title: 'Rachas', body: streakLines.join('\n')),
+              );
+            }
+
+            final trainingLines = <String>[];
+            if (lastWorkoutName.isNotEmpty) {
+              trainingLines.add('Último entreno: $lastWorkoutName');
+            }
+            if (trainingLines.isNotEmpty) {
+              infoCards.add(
+                section(title: 'Entrenamiento', body: trainingLines.join('\n')),
+              );
+            }
+
+            final achievementsLines = <String>[];
+            if (achievementsUnlocked != null) {
+              achievementsLines.add('Desbloqueados: $achievementsUnlocked');
+            }
+            if (achievementsLines.isNotEmpty) {
+              infoCards.add(
+                section(title: 'Logros', body: achievementsLines.join('\n')),
+              );
+            }
+
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 header(),
                 const SizedBox(height: 14),
                 stats(),
-                const SizedBox(height: 14),
-                section(
-                  title: 'Logros',
-                  body: 'Próximamente: lista de logros del usuario.',
-                ),
-                const SizedBox(height: 10),
-                section(
-                  title: 'Comidas favoritas',
-                  body: 'Próximamente: comidas marcadas como favoritas.',
-                ),
-                const SizedBox(height: 10),
-                section(
-                  title: 'Tiempo en la app',
-                  body: 'Próximamente: tiempo total y sesiones.',
-                ),
-                const SizedBox(height: 10),
-                section(
-                  title: 'Constancia promedio',
-                  body: 'Próximamente: promedio semanal y tendencias.',
-                ),
+                if (infoCards.isNotEmpty) const SizedBox(height: 14),
+                for (var i = 0; i < infoCards.length; i++) ...[
+                  infoCards[i],
+                  if (i != infoCards.length - 1) const SizedBox(height: 10),
+                ],
               ],
             );
           },

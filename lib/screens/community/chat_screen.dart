@@ -18,6 +18,7 @@ import '../../services/private_chat_local_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/social_firestore_service.dart';
 import '../../services/mute_service.dart';
+import '../../services/community_share_service.dart';
 import 'public_profile_screen.dart';
 import '../../widgets/community/message_bubble.dart';
 import '../../widgets/progress/progress_section_card.dart';
@@ -62,6 +63,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _chatService = ChatService();
   final _friendService = FriendService();
   final _muteService = MuteService();
+  final _shareService = CommunityShareService();
 
   final _dmScrollCtrl = ScrollController();
   final Map<String, GlobalKey> _dmMessageKeys = <String, GlobalKey>{};
@@ -404,7 +406,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'Activo';
   }
 
-  Future<void> _send(MessageType type, String text) async {
+  Future<void> _send(MessageType type, String text, {Map<String, Object?>? share}) async {
     if (text.trim().isEmpty) return;
 
     if (_isProfessionalLocked) return;
@@ -432,7 +434,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
 
-      await _social.sendMessage(chatId: chatId, type: type, text: text);
+      await _social.sendMessage(chatId: chatId, type: type, text: text, share: share);
       _textCtrl.clear();
       return;
     }
@@ -440,13 +442,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.scope == ChatScope.community) {
       if (chat == null) return;
       if (chat.readOnly) return;
-      await _communityRepo.sendMessage(chatId: chat.id, type: type, text: text);
+      await _communityRepo.sendMessage(chatId: chat.id, type: type, text: text, share: share);
     } else if (widget.scope == ChatScope.privateChat) {
       if (chat == null) return;
       await _privateRepo.sendMessageToChat(
         chatId: chat.id,
         type: type,
         text: text,
+        share: share,
       );
     } else {
       final contact = _contact;
@@ -455,6 +458,7 @@ class _ChatScreenState extends State<ChatScreen> {
         contact: contact,
         type: type,
         text: text,
+        share: share,
       );
     }
 
@@ -538,21 +542,114 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (picked == null) return;
 
-    final payload = switch (picked) {
-      MessageType.text => null,
-      MessageType.routine => 'Full body 20 min · Casa',
-      MessageType.achievement => 'Racha 7 días · CF +20',
-      MessageType.daySummary => 'CF 78 · Entreno completado · Agua 2L',
-      MessageType.diet => 'Hoy: proteína alta · 2L agua · sin ultraprocesados',
-      MessageType.streaks => 'Racha actual: 3 días · Racha máx: 7 días',
-    };
-
     if (picked == MessageType.text) {
       if (mounted) FocusScope.of(context).requestFocus();
       return;
     }
 
-    await _send(picked, payload ?? '');
+    IconData iconFor(MessageType t) {
+      switch (t) {
+        case MessageType.routine:
+          return Icons.fitness_center_outlined;
+        case MessageType.achievement:
+          return Icons.emoji_events_outlined;
+        case MessageType.daySummary:
+          return Icons.today_outlined;
+        case MessageType.diet:
+          return Icons.restaurant_outlined;
+        case MessageType.streaks:
+          return Icons.local_fire_department_outlined;
+        case MessageType.text:
+          return Icons.chat_bubble_outline;
+      }
+    }
+
+    CommunityShareOption? selected;
+    try {
+      final options = await _shareService.getShareOptions(type: picked);
+      if (!mounted) return;
+
+      if (options.isEmpty) {
+        selected = null;
+      } else if (options.length == 1) {
+        selected = options.first;
+      } else {
+        selected = await showModalBottomSheet<CommunityShareOption>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) {
+            final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+            final maxHeight = MediaQuery.sizeOf(context).height * 0.70;
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: ProgressSectionCard(
+                    padding: const EdgeInsets.all(6),
+                    child: ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                          separatorBuilder: (context, index) =>
+                            const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final o = options[index];
+                        final subtitle =
+                            (o.subtitle ?? '').trim().isNotEmpty
+                                ? o.subtitle!.trim()
+                                : o.payload;
+                        return _PlusItem(
+                          icon: iconFor(picked),
+                          title: o.title,
+                          subtitle: subtitle,
+                          onTap: () => Navigator.of(context).pop(o),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+
+        // User dismissed the picker.
+        if (selected == null) return;
+      }
+    } catch (_) {
+      selected = null;
+    }
+
+    if (!mounted) return;
+    if (selected == null) {
+      // Fallback: keep previous behavior (best-effort auto compose).
+      String? fallback;
+      try {
+        fallback = await _shareService.composeShareText(type: picked);
+      } catch (_) {
+        fallback = null;
+      }
+
+      if (!mounted) return;
+      if (fallback == null || fallback.trim().isEmpty) {
+        _snack('No se pudo generar el mensaje.');
+        return;
+      }
+
+      await _send(picked, fallback);
+      return;
+    }
+
+    final chosenPayload = selected.payload;
+    if (chosenPayload.trim().isEmpty) {
+      _snack('No se pudo generar el mensaje.');
+      return;
+    }
+
+    await _send(picked, chosenPayload, share: selected.share);
   }
 
   @override

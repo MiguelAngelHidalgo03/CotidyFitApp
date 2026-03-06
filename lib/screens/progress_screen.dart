@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
 
-import '../models/progress_week_summary.dart';
+import '../models/progress_advanced_analytics.dart';
 import '../models/user_profile.dart';
-import '../models/weight_entry.dart';
-import '../services/achievements_service.dart';
+import '../screens/achievements_screen.dart';
+import '../services/health_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
+import '../services/progress_advanced_analytics_service.dart';
 import '../services/progress_week_summary_service.dart';
+import '../services/recipe_repository.dart';
+import '../services/recipes_repository_factory.dart';
 import '../services/weight_service.dart';
+import '../services/women_cycle_service.dart';
 import '../utils/date_utils.dart';
 import '../widgets/progress/header_profile.dart';
-import '../widgets/progress/progress_constancy_card.dart';
-import '../widgets/progress/progress_health_summary_card.dart';
-import '../widgets/progress/progress_insights_section.dart';
-import '../widgets/progress/progress_nutrition_compliance_card.dart';
+import '../widgets/progress/progress_advanced_dashboard.dart';
 import '../widgets/progress/progress_premium_card.dart';
-import '../widgets/progress/progress_achievements_card.dart';
-import '../widgets/progress/progress_smart_tracking_card.dart';
-import '../widgets/progress/progress_weight_summary_card.dart';
+import '../widgets/progress/progress_section_card.dart';
 import 'profile_screen.dart';
 
 class ProgressScreen extends StatefulWidget {
@@ -34,15 +33,17 @@ class _ProgressScreenState extends State<ProgressScreen> {
   late final WeightService _weightService;
   late final ProfileService _profiles;
   late final ProgressWeekSummaryService _weekSummaryService;
-  late final AchievementsService _achievements;
+  late final ProgressAdvancedAnalyticsService _advancedService;
+  late final WomenCycleService _womenCycleService;
+  late final RecipeRepository _recipes;
 
   ProgressData? _data;
-  WeightSummary? _weight;
-  Map<String, int> _cfHistory = const {};
   UserProfile? _profile;
-  ProgressWeekSummary? _weekSummary;
-  List<AchievementViewItem> _achievementItems = const [];
+  ProgressAdvancedAnalytics? _advancedAnalytics;
+  WomenCycleData? _cycleData;
+  List<WomenCycleFoodTip> _cycleTips = const [];
   bool _loading = true;
+  bool _savingWeight = false;
 
   @override
   void initState() {
@@ -52,32 +53,79 @@ class _ProgressScreenState extends State<ProgressScreen> {
     _weightService = WeightService();
     _profiles = ProfileService();
     _weekSummaryService = ProgressWeekSummaryService(storage: _storage);
-    _achievements = AchievementsService();
+    _advancedService = ProgressAdvancedAnalyticsService(
+      progress: _service,
+      weekSummary: _weekSummaryService,
+      storage: _storage,
+    );
+    _womenCycleService = WomenCycleService();
+    _recipes = RecipesRepositoryFactory.create();
 
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    final data = await _service.loadProgress(days: 7);
-    final weight = await _weightService.getSummary(maxPoints: 30);
-    final history = await _storage.getCfHistory();
-    final profile = await _profiles.getOrCreateProfile();
-    final weekSummary = await _weekSummaryService.getCurrentWeekSummary();
-    final achievements = await _achievements.getAchievementsForCurrentUser();
-    if (!mounted) return;
-    setState(() {
-      _data = data;
-      _weight = weight;
-      _cfHistory = history;
-      _profile = profile;
-      _weekSummary = weekSummary;
-      _achievementItems = achievements;
-      _loading = false;
-    });
+  Future<void> _load({bool withLoader = true}) async {
+    if (withLoader && mounted) setState(() => _loading = true);
+    try {
+      final profile = await _profiles.getOrCreateProfile();
+
+      // Best-effort: sync steps from device health data so Progress can use them.
+      await _syncStepsFromHealthBestEffort();
+
+      final data = await _service.loadProgress(days: 7);
+      final advanced = await _advancedService.load(profile: profile);
+      final cycleData = await _womenCycleService.getCurrentCycle();
+      final recipes = await _recipes.getAllRecipes();
+      final cycleTips = _profileIsFemale(profile)
+          ? _womenCycleService.buildFoodTips(
+              now: DateTime.now(),
+              recipes: recipes,
+            )
+          : const <WomenCycleFoodTip>[];
+
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _data = data;
+        _advancedAnalytics = advanced;
+        _cycleData = cycleData;
+        _cycleTips = cycleTips;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _syncStepsFromHealthBestEffort() async {
+    if (_isRunningWidgetTest) return;
+
+    try {
+      await HealthService().syncTodaySteps().timeout(
+        const Duration(seconds: 6),
+        onTimeout: () => null,
+      );
+    } catch (_) {
+      // Ignore (Health Connect/HealthKit may be unavailable or permission denied).
+    }
+  }
+
+  bool get _isRunningWidgetTest {
+    // We cannot import `flutter_test` from production code, so detect it by
+    // checking the binding runtimeType.
+    try {
+      final type = WidgetsBinding.instance.runtimeType.toString();
+      return type.contains('TestWidgetsFlutterBinding') ||
+          type.contains('AutomatedTestWidgetsFlutterBinding') ||
+          type.contains('LiveTestWidgetsFlutterBinding');
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _addWeightFlow() async {
+    if (_savingWeight) return;
     final controller = TextEditingController();
     final result = await showDialog<double>(
       context: context,
@@ -86,10 +134,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
           title: const Text('Añadir peso'),
           content: TextField(
             controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(
-              decimal: true,
-              signed: false,
-            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               hintText: 'Ej: 72.5',
               suffixText: 'kg',
@@ -115,253 +160,331 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
 
     if (result == null) return;
-
-    await _weightService.upsertToday(result);
-    final weight = await _weightService.getSummary(maxPoints: 30);
-    if (!mounted) return;
-    setState(() => _weight = weight);
+    if (mounted) setState(() => _savingWeight = true);
+    try {
+      await _weightService.upsertToday(result);
+      final profile = _profile ?? await _profiles.getOrCreateProfile();
+      final advanced = await _advancedService.load(profile: profile);
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _advancedAnalytics = advanced;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Peso guardado correctamente.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingWeight = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final data = _data;
-    final weekSummary = _weekSummary;
+    final analytics = _advancedAnalytics;
 
     return Scaffold(
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : data == null || weekSummary == null
-                ? Center(
-                    child: Text(
-                      'No hay datos aún.',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView(
-                      padding: const EdgeInsets.all(20),
-                      children: _buildBody(context, data, weekSummary),
-                    ),
-                  ),
+            : data == null || analytics == null
+            ? Center(
+                child: Text(
+                  'No hay datos aún.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: _buildBody(context, analytics),
+                ),
+              ),
       ),
     );
   }
 
   List<Widget> _buildBody(
     BuildContext context,
-    ProgressData data,
-    ProgressWeekSummary weekSummary,
+    ProgressAdvancedAnalytics analytics,
   ) {
-    final monthAverage = _monthAverageCf(DateTime.now(), _cfHistory);
-    final maxStreak = _maxStreakFromHistory(_cfHistory);
-
-    final weight = _weight;
-    final latest = weight?.latest;
-    final last30 = (weight?.history ?? const <WeightEntry>[]).toList();
-    final weekDiff = weight?.diffFromWeekBefore;
-    final monthDiff = _diffFromDaysBefore(last30, days: 30);
-
-    final insights = _buildWeeklyAnalysis(data: data, weekSummary: weekSummary);
-
     return [
       HeaderProfile(
         profile: _profile,
         onOpenProfile: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ProfileScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
         },
       ),
-      const SizedBox(height: 14),
-      ProgressConstancyCard(
-        weekPoints: data.last7Days,
-        monthCf: monthAverage,
-        maxStreak: maxStreak,
-      ),
-      const SizedBox(height: 14),
-      ProgressHealthSummaryCard(summary: weekSummary),
-      const SizedBox(height: 14),
-      ProgressWeightSummaryCard(
-        latest: latest,
-        weekDiffKg: weekDiff,
-        monthDiffKg: monthDiff,
-        last30Days: last30,
-        onAdd: _addWeightFlow,
-      ),
-      const SizedBox(height: 14),
-      ProgressNutritionComplianceCard(summary: weekSummary),
-      const SizedBox(height: 14),
-      ProgressSmartTrackingCard(summary: weekSummary),
-      const SizedBox(height: 14),
-      ProgressInsightsSection(insights: insights),
-      const SizedBox(height: 14),
-      ProgressAchievementsCard(items: _achievementItems),
-      const SizedBox(height: 14),
-      const ProgressPremiumCard(),
       const SizedBox(height: 10),
+      ProgressAdvancedDashboard(
+        analytics: analytics,
+        onAddWeight: _addWeightFlow,
+        userName: (_profile?.name.trim().isEmpty ?? true)
+            ? 'Usuario'
+            : _profile!.name,
+        currentCf: _data?.currentCf,
+        womenCycleSection: _profileIsFemale(_profile)
+            ? _buildWomenCycleCard(context)
+            : null,
+      ),
+      const SizedBox(height: 10),
+      Text(
+        'Logros',
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 10),
+      _buildAchievementsEntry(context, analytics),
+      const SizedBox(height: 10),
+      const ProgressPremiumCard(),
+      const SizedBox(height: 8),
     ];
   }
 
-  int _monthAverageCf(DateTime focusedMonth, Map<String, int> history) {
-    final values = <int>[];
-    for (final e in history.entries) {
-      final d = DateUtilsCF.fromKey(e.key);
-      if (d == null) continue;
-      if (d.year != focusedMonth.year || d.month != focusedMonth.month) continue;
-      if (e.value <= 0) continue;
-      values.add(e.value);
+  bool _profileIsFemale(UserProfile? p) => p?.sex == UserSex.mujer;
+
+  Widget _buildWomenCycleCard(BuildContext context) {
+    final cycle = _cycleData;
+    final now = DateUtilsCF.dateOnly(DateTime.now());
+
+    final isActive = cycle != null && cycle.end == null;
+
+    String fmt(DateTime d) =>
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+    String statusText() {
+      if (cycle == null) return 'Pulsa "Tengo la regla" cuando empiece.';
+      if (cycle.end == null) {
+        final days = now.difference(cycle.start).inDays + 1;
+        return 'Regla activa · día ${days < 1 ? 1 : days}.';
+      }
+
+      final daysAgo = now.difference(cycle.end!).inDays;
+      if (daysAgo <= 0) return 'Última regla terminó hoy.';
+      if (daysAgo == 1) return 'Última regla terminó ayer.';
+      return 'Última regla terminó hace $daysAgo día(s).';
     }
-    if (values.isEmpty) return 0;
-    final sum = values.fold<int>(0, (a, b) => a + b);
-    return (sum / values.length).round().clamp(0, 100);
+
+    return ProgressSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.female_outlined),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Ciclo y nutrición femenino',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              if (isActive)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.all(Radius.circular(999)),
+                    border: Border.all(
+                      color: Colors.pink.withValues(alpha: 0.4),
+                    ),
+                    color: Colors.pink.withValues(alpha: 0.10),
+                  ),
+                  child: const Text('Regla activa'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(statusText(), style: Theme.of(context).textTheme.bodyMedium),
+          if (cycle != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              cycle.end == null
+                  ? 'Inicio: ${fmt(cycle.start)}'
+                  : 'Inicio: ${fmt(cycle.start)} · Fin: ${fmt(cycle.end!)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: isActive
+                    ? FilledButton.icon(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final next = await _womenCycleService.endPeriod();
+                          if (!mounted || next == null) return;
+                          setState(() => _cycleData = next);
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Fin de regla guardado.'),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Se me acabó la regla'),
+                      )
+                    : FilledButton.icon(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final next = await _womenCycleService.startPeriod();
+                          if (!mounted) return;
+                          setState(() => _cycleData = next);
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Regla iniciada.')),
+                          );
+                        },
+                        icon: const Icon(Icons.water_drop_outlined),
+                        label: const Text('Tengo la regla'),
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final tip in _cycleTips.take(3)) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Icon(Icons.restaurant_menu_outlined, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tip.title,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        tip.reason,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
   }
 
-  int _maxStreakFromHistory(Map<String, int> history) {
-    final days = <DateTime>[];
-    for (final e in history.entries) {
-      if (e.value <= 0) continue;
-      final d = DateUtilsCF.fromKey(e.key);
-      if (d != null) days.add(DateUtilsCF.dateOnly(d));
-    }
-    if (days.isEmpty) return 0;
-    days.sort((a, b) => a.compareTo(b));
+  Widget _buildAchievementsEntry(
+    BuildContext context,
+    ProgressAdvancedAnalytics analytics,
+  ) {
+    final s = analytics.achievements;
+    final xpToLevelStart = (s.level - 1) * 250;
+    final denominator = (s.nextLevelXp - xpToLevelStart).clamp(1, 1000000);
+    final levelProgress = ((s.currentXp - xpToLevelStart) / denominator).clamp(
+      0.0,
+      1.0,
+    );
 
-    var best = 1;
-    var current = 1;
-    for (var i = 1; i < days.length; i++) {
-      final diff = days[i].difference(days[i - 1]).inDays;
-      if (diff == 1) {
-        current += 1;
-      } else if (diff == 0) {
-        continue;
-      } else {
-        best = best > current ? best : current;
-        current = 1;
-      }
-    }
-    best = best > current ? best : current;
-    return best;
-  }
-
-  List<ProgressInsight> _buildWeeklyAnalysis({
-    required ProgressData data,
-    required ProgressWeekSummary weekSummary,
-  }) {
-    final insights = <ProgressInsight>[];
-
-    final today = DateUtilsCF.dateOnly(DateTime.now());
-    final weekday = today.weekday; // Mon=1..Sun=7
-
-    final activeDays = weekSummary.activeDays;
-    final trainedMinutes = weekSummary.trainedMinutes;
-    final hydrationPct = weekSummary.hydrationAveragePercent;
-    final energyAvg = weekSummary.energyAverage;
-
-    if (weekday <= DateTime.tuesday && activeDays == 0) {
-      insights.add(const ProgressInsight(
-        icon: Icons.rocket_launch_outlined,
-        title: 'La semana acaba de empezar',
-        description: 'Aún estás a tiempo: un entreno ligero hoy te pone en marcha.',
-      ));
-    } else if (activeDays >= 3 && data.average7Days >= 60) {
-      insights.add(const ProgressInsight(
-        icon: Icons.star_outline,
-        title: 'Gran comienzo de semana',
-        description: 'Buen ritmo. Mantén consistencia y tu CF lo reflejará.',
-      ));
-    } else if (activeDays <= 1 && weekday >= DateTime.thursday) {
-      insights.add(const ProgressInsight(
-        icon: Icons.fitness_center_outlined,
-        title: 'Añade un entrenamiento ligero',
-        description: 'Una sesión corta puede mejorar tu semana sin agotarte.',
-      ));
-    }
-
-    if (hydrationPct < 60) {
-      insights.add(const ProgressInsight(
-        icon: Icons.water_drop_outlined,
-        title: 'Hidratación baja',
-        description: 'Prueba 2–3 recordatorios al día o añade 250 ml tras cada comida.',
-      ));
-    } else if (hydrationPct >= 85) {
-      insights.add(const ProgressInsight(
-        icon: Icons.water_drop_outlined,
-        title: 'Hidratación sólida',
-        description: 'Muy buen hábito esta semana. Eso ayuda a energía y recuperación.',
-      ));
-    }
-
-    if (energyAvg != null && energyAvg <= 2.6) {
-      insights.add(const ProgressInsight(
-        icon: Icons.bedtime_outlined,
-        title: 'Revisa tu descanso',
-        description: 'Tu energía está baja. Prioriza sueño y un día más suave de entreno.',
-      ));
-    }
-
-    final points = data.last7Days;
-    if (points.length >= 6) {
-      final a1 = ((points[0].value + points[1].value + points[2].value) / 3).round();
-      final a2 = ((points[points.length - 3].value + points[points.length - 2].value + points[points.length - 1].value) / 3).round();
-      if (a2 >= a1 + 8) {
-        insights.add(const ProgressInsight(
-          icon: Icons.trending_up,
-          title: 'Tendencia al alza',
-          description: 'Tu CF está subiendo. Repite lo que funcionó estos días.',
-        ));
-      } else if (a1 >= a2 + 8) {
-        insights.add(const ProgressInsight(
-          icon: Icons.trending_down,
-          title: 'Bajada reciente',
-          description: 'Vuelve a lo básico: agua, movimiento y una comida completa.',
-        ));
-      } else {
-        insights.add(const ProgressInsight(
-          icon: Icons.insights_outlined,
-          title: 'Semana estable',
-          description: 'Estás consistente. Un pequeño hábito puede empujarte hacia arriba.',
-        ));
-      }
-    }
-
-    if (trainedMinutes >= 120) {
-      insights.add(const ProgressInsight(
-        icon: Icons.timer_outlined,
-        title: 'Volumen semanal alto',
-        description: 'Buen total de minutos. Recuerda alternar intensidad y recuperación.',
-      ));
-    }
-
-    if (insights.isEmpty) {
-      insights.add(const ProgressInsight(
-        icon: Icons.insights_outlined,
-        title: 'Sigue registrando',
-        description: 'Con 2–3 días más de datos, tu análisis semanal será más preciso.',
-      ));
-    }
-
-    if (insights.length > 4) return insights.sublist(0, 4);
-    return insights;
-  }
-
-  double? _diffFromDaysBefore(List<WeightEntry> history, {required int days}) {
-    if (history.isEmpty) return null;
-
-    final latest = history.last;
-    final target = latest.date.subtract(Duration(days: days));
-
-    WeightEntry? candidate;
-    for (var i = history.length - 1; i >= 0; i--) {
-      final e = history[i];
-      if (!e.date.isAfter(target)) {
-        candidate = e;
-        break;
-      }
-    }
-    if (candidate == null) return null;
-    return latest.weight - candidate.weight;
+    return ProgressSectionCard(
+      child: InkWell(
+        borderRadius: const BorderRadius.all(Radius.circular(18)),
+        onTap: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AchievementsScreen()));
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _SmallKpi(
+                      label: 'Desbloqueados',
+                      value: '${s.unlocked}',
+                    ),
+                  ),
+                  Expanded(
+                    child: _SmallKpi(
+                      label: 'En progreso',
+                      value: '${s.inProgress}',
+                    ),
+                  ),
+                  Expanded(
+                    child: _SmallKpi(label: 'Nivel', value: '${s.level}'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text('XP', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 4),
+              LinearProgressIndicator(
+                value: levelProgress,
+                minHeight: 8,
+                backgroundColor: const Color(0xFFE6EAF2),
+                color: const Color(0xFF27426B),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${s.currentXp} / ${s.nextLevelXp} XP',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              if (s.rarest.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Logros raros: ${s.rarest.join(' · ')}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+              const SizedBox(height: 4),
+              Text(
+                'Ver detalle',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
+class _SmallKpi extends StatelessWidget {
+  const _SmallKpi({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+        ),
+      ],
+    );
+  }
+}

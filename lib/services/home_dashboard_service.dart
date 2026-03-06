@@ -107,6 +107,8 @@ class HomeDashboardData {
     required this.habits,
     required this.tasks,
     required this.weeklyStreak,
+    required this.weeklyHabitsCompleted,
+    required this.weeklyHabitActiveDays,
   });
 
   final List<HomeDayStat> weekDays;
@@ -118,6 +120,8 @@ class HomeDashboardData {
   final List<HabitItem> habits;
   final List<TaskItem> tasks;
   final int weeklyStreak;
+  final int weeklyHabitsCompleted;
+  final int weeklyHabitActiveDays;
 }
 
 class HomeDashboardService {
@@ -242,6 +246,7 @@ class HomeDashboardService {
 
     final challenge = await _loadWeeklyChallenge(uid: uid, weekId: weekId, weeklySteps: weeklySteps);
     final habits = await _loadHabits(uid: uid, today: today);
+    final weeklyHabitsStats = await _loadWeeklyHabitsStats(uid: uid, weekDates: weekDates);
     final tasks = await _loadTasks(uid: uid);
     final streak = await _computeStreak(uid: uid, today: today);
     final weeklyStreak = await _computeWeeklyStreak(uid: uid, currentWeekStart: weekStart);
@@ -256,7 +261,28 @@ class HomeDashboardService {
       habits: habits,
       tasks: tasks,
       weeklyStreak: weeklyStreak,
+      weeklyHabitsCompleted: weeklyHabitsStats.completed,
+      weeklyHabitActiveDays: weeklyHabitsStats.activeDays,
     );
+  }
+
+  Future<({int completed, int activeDays})> _loadWeeklyHabitsStats({
+    required String uid,
+    required List<DateTime> weekDates,
+  }) async {
+    final userRef = _db.collection('users').doc(uid);
+    var completed = 0;
+    var activeDays = 0;
+
+    for (final day in weekDates) {
+      final key = DateUtilsCF.toKey(day);
+      final logs = await userRef.collection('habitLogs').doc(key).collection('habits').get();
+      final count = logs.docs.length;
+      completed += count;
+      if (count > 0) activeDays += 1;
+    }
+
+    return (completed: completed, activeDays: activeDays);
   }
 
   Future<List<HabitItem>> _loadHabits({required String uid, required DateTime today}) async {
@@ -538,6 +564,37 @@ class HomeDashboardService {
     return snap.data();
   }
 
+  Future<Map<String, dynamic>?> getDailyMood({
+    required String uid,
+    required String dateKey,
+  }) async {
+    final snap = await _db.collection('users').doc(uid).collection('dailyMood').doc(dateKey).get();
+    return snap.data();
+  }
+
+  Future<void> saveDailyMood({
+    required String uid,
+    required String dateKey,
+    required String emoji,
+    required int energy,
+    required int mood,
+    required int stress,
+    required int sleep,
+    required List<String> tags,
+  }) async {
+    await _db.collection('users').doc(uid).collection('dailyMood').doc(dateKey).set({
+      'dateKey': dateKey,
+      'emoji': emoji,
+      'energy': energy.clamp(1, 5),
+      'mood': mood.clamp(1, 5),
+      'stress': stress.clamp(1, 5),
+      'sleep': sleep.clamp(1, 5),
+      'tags': tags,
+      'registered': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   Future<Map<String, dynamic>> getDailyInsight({
     required String uid,
     required String dateKey,
@@ -558,7 +615,8 @@ class HomeDashboardService {
       'mealsLoggedCount': _asInt(s['mealsLoggedCount']),
       'meditationMinutes': _asInt(s['meditationMinutes']),
       'moodRegistered': m.isNotEmpty || h['moodRegistered'] == true,
-      'moodIcon': (h['moodIcon'] as String? ?? '').trim(),
+      'moodIcon': ((m['emoji'] as String?) ?? (h['moodIcon'] as String?) ?? '').trim(),
+      'moodValue': _asInt(m['mood']),
     };
   }
 
@@ -574,6 +632,22 @@ class HomeDashboardService {
       final key = DateUtilsCF.toKey(date);
       final snap = await _db.collection('users').doc(uid).collection('dailyStats').doc(key).get();
       out.add(_asInt(snap.data()?['steps']));
+    }
+    return out;
+  }
+
+  Future<List<int>> getCfStats({
+    required String uid,
+    required int days,
+  }) async {
+    final safeDays = days <= 0 ? 1 : days;
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final out = <int>[];
+    for (var i = safeDays - 1; i >= 0; i--) {
+      final date = today.subtract(Duration(days: i));
+      final key = DateUtilsCF.toKey(date);
+      final snap = await _db.collection('users').doc(uid).collection('dailyStats').doc(key).get();
+      out.add(_asInt(snap.data()?['cfIndex']));
     }
     return out;
   }
@@ -614,13 +688,28 @@ class HomeDashboardService {
     for (var i = 0; i < 30; i++) {
       final date = today.subtract(Duration(days: i));
       final key = DateUtilsCF.toKey(date);
-      final snap = await _db.collection('users').doc(uid).collection('dailyStats').doc(key).get();
-      final data = snap.data();
-      if (data == null) break;
-      final done = data['workoutCompleted'] == true ||
-          _asInt(data['steps']) >= 6000 ||
-          _asInt(data['mealsLoggedCount']) >= 3 ||
-          _asInt(data['meditationMinutes']) >= 5;
+      final userRef = _db.collection('users').doc(uid);
+      final statsSnap = await userRef.collection('dailyStats').doc(key).get();
+      final homeSnap = await userRef.collection('homeDaily').doc(key).get();
+      final moodSnap = await userRef.collection('dailyMood').doc(key).get();
+
+      final stats = statsSnap.data() ?? const <String, dynamic>{};
+      final home = homeSnap.data() ?? const <String, dynamic>{};
+
+      // If today has not been persisted yet, don't break streak continuity.
+      if (i == 0 && stats.isEmpty && home.isEmpty && !moodSnap.exists) {
+        continue;
+      }
+
+      final done =
+          stats['workoutCompleted'] == true ||
+          _asInt(stats['steps']) >= 6000 ||
+          _asInt(stats['mealsLoggedCount']) >= 3 ||
+          _asInt(stats['meditationMinutes']) >= 5 ||
+          _asInt(stats['cfIndex']) >= 60 ||
+          ((stats['waterLiters'] is num) && (stats['waterLiters'] as num) >= 1.5) ||
+          home['moodRegistered'] == true ||
+          moodSnap.exists;
       if (!done) break;
       streak += 1;
     }
@@ -632,8 +721,42 @@ class HomeDashboardService {
     for (var i = 0; i < 10; i++) {
       final weekStart = currentWeekStart.subtract(Duration(days: i * 7));
       final weekId = DateUtilsCF.toKey(weekStart);
-      final snap = await _db.collection('users').doc(uid).collection('weeklyStats').doc(weekId).get();
-      final done = _asInt(snap.data()?['completedGoals']) >= 2;
+      final userRef = _db.collection('users').doc(uid);
+      final snap = await userRef.collection('weeklyStats').doc(weekId).get();
+      final data = snap.data() ?? const <String, dynamic>{};
+
+      var done = _asInt(data['completedGoals']) >= 2 || (data['progress'] is num && (data['progress'] as num) >= 0.5);
+
+      if (!done) {
+        final daySnaps = await Future.wait(
+          List.generate(
+            7,
+            (d) => userRef
+                .collection('dailyStats')
+                .doc(DateUtilsCF.toKey(weekStart.add(Duration(days: d))))
+                .get(),
+          ),
+        );
+        var activeDays = 0;
+        var anyData = false;
+        for (final day in daySnaps) {
+          final stats = day.data() ?? const <String, dynamic>{};
+          if (stats.isNotEmpty) anyData = true;
+          final active =
+              stats['workoutCompleted'] == true ||
+              _asInt(stats['steps']) >= 4000 ||
+              _asInt(stats['mealsLoggedCount']) >= 2 ||
+              _asInt(stats['meditationMinutes']) >= 5 ||
+              _asInt(stats['cfIndex']) >= 55;
+          if (active) activeDays += 1;
+        }
+
+        if (i == 0 && !anyData) {
+          continue;
+        }
+        done = activeDays >= 4;
+      }
+
       if (!done) break;
       streak += 1;
     }

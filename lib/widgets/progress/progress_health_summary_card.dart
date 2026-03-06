@@ -54,6 +54,13 @@ class ProgressHealthSummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _RowMetric(
+            icon: Icons.insights_outlined,
+            label: 'CF promedio semanal',
+            value: '${summary.cfWeekAverage}/100',
+            tone: _toneForNutrition(summary.cfWeekAverage),
+          ),
+          const SizedBox(height: 10),
+          _RowMetric(
             icon: Icons.timer_outlined,
             label: 'Minutos entrenados',
             value: '${summary.trainedMinutes} min',

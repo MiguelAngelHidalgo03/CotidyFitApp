@@ -49,6 +49,7 @@ class PrivateChatLocalService {
     required ContactModel contact,
     required MessageType type,
     required String text,
+    Map<String, Object?>? share,
   }) async {
     final cleaned = text.trim();
     if (cleaned.isEmpty) throw StateError('Empty message');
@@ -66,6 +67,7 @@ class PrivateChatLocalService {
       isMine: true,
       type: type,
       text: cleaned,
+      share: share,
       createdAtMs: now,
     );
 
@@ -97,6 +99,7 @@ class PrivateChatLocalService {
     required String chatId,
     required MessageType type,
     required String text,
+    Map<String, Object?>? share,
   }) async {
     final cleaned = text.trim();
     if (cleaned.isEmpty) throw StateError('Empty message');
@@ -114,6 +117,7 @@ class PrivateChatLocalService {
       isMine: true,
       type: type,
       text: cleaned,
+      share: share,
       createdAtMs: now,
     );
 

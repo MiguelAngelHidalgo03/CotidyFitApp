@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../models/exercise.dart';
 import '../models/workout.dart';
 import '../models/workout_plan.dart';
 import '../services/workout_history_service.dart';
@@ -287,6 +288,7 @@ class _DayPlanRow extends StatelessWidget {
                     var query = '';
                     WorkoutDifficulty? difficulty;
                     WorkoutDurationFilter? duration;
+                    final Set<MuscleGroup> muscles = {};
 
                     final searchCtrl = TextEditingController();
 
@@ -316,6 +318,12 @@ class _DayPlanRow extends StatelessWidget {
                                 if (duration != null &&
                                     !duration!.matchesMinutes(
                                       w.durationMinutes,
+                                    )) {
+                                  continue;
+                                }
+                                if (muscles.isNotEmpty &&
+                                    !w.exercises.any(
+                                      (e) => muscles.contains(e.muscleGroup),
                                     )) {
                                   continue;
                                 }
@@ -424,6 +432,40 @@ class _DayPlanRow extends StatelessWidget {
                                                 ?.copyWith(
                                                   fontWeight: FontWeight.w800,
                                                   color: duration == f
+                                                      ? CFColors.primary
+                                                      : CFColors.textSecondary,
+                                                ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                        ],
+                                        for (final m in MuscleGroup.values) ...[
+                                          FilterChip(
+                                            selected: muscles.contains(m),
+                                            onSelected: (_) => setSheetState(
+                                              () => muscles.contains(m)
+                                                  ? muscles.remove(m)
+                                                  : muscles.add(m),
+                                            ),
+                                            avatar: Icon(
+                                              m.icon,
+                                              size: 18,
+                                              color: CFColors.primary,
+                                            ),
+                                            label: Text(m.label),
+                                            selectedColor: CFColors.primary
+                                                .withValues(alpha: 0.12),
+                                            checkmarkColor: CFColors.primary,
+                                            side: BorderSide(
+                                              color: muscles.contains(m)
+                                                  ? CFColors.primary
+                                                  : CFColors.softGray,
+                                            ),
+                                            labelStyle: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  color: muscles.contains(m)
                                                       ? CFColors.primary
                                                       : CFColors.textSecondary,
                                                 ),

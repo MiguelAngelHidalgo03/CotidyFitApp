@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "385697279961-4hdm3jiajoejtcb87jhbj4avr2cma2fv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.cotidyfitapp",
+            "certificate_hash": "f209c8cc16a182089d38bf9a219b718230cafea4"
+          }
+        },
+        {
           "client_id": "385697279961-cn82v9r6isesv7t85utbvnilc6og066t.apps.googleusercontent.com",
           "client_type": 3
         }

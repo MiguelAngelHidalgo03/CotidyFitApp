@@ -216,14 +216,15 @@ class SocialFirestoreService {
             final updatedAt = data['updatedAt'];
             final createdAt = data['createdAt'];
 
-            final lastMessageTimestampMs =
-              lastTs is Timestamp ? lastTs.millisecondsSinceEpoch : null;
+            final lastMessageTimestampMs = lastTs is Timestamp
+                ? lastTs.millisecondsSinceEpoch
+                : null;
             final updatedAtMsFallback = updatedAt is Timestamp
-              ? updatedAt.millisecondsSinceEpoch
-              : null;
+                ? updatedAt.millisecondsSinceEpoch
+                : null;
             final createdAtMsFallback = createdAt is Timestamp
-              ? createdAt.millisecondsSinceEpoch
-              : null;
+                ? createdAt.millisecondsSinceEpoch
+                : null;
 
             final last = data['lastMessage'];
             final lastMessage = _messageFromLastMessageMap(
@@ -242,7 +243,8 @@ class SocialFirestoreService {
               if (v is String) lastMessageCreatedAtMs = int.tryParse(v);
             }
 
-            final updatedAtMs = lastMessageTimestampMs ??
+            final updatedAtMs =
+                lastMessageTimestampMs ??
                 updatedAtMsFallback ??
                 lastMessageCreatedAtMs ??
                 createdAtMsFallback ??
@@ -366,6 +368,12 @@ class SocialFirestoreService {
                 (data['senderName'] as String?)?.trim() ?? 'Usuario';
             final text = (data['text'] as String?) ?? '';
             final typeRaw = (data['type'] as String?)?.trim();
+            final shareRaw = data['share'];
+
+            Map<String, Object?>? share;
+            if (shareRaw is Map) {
+              share = shareRaw.map((k, v) => MapEntry(k.toString(), v));
+            }
 
             MessageType type = MessageType.text;
             for (final v in MessageType.values) {
@@ -389,6 +397,7 @@ class SocialFirestoreService {
                 isMine: senderUid == uid,
                 type: type,
                 text: text,
+                share: share,
                 createdAtMs: createdAtMs,
               ),
             );
@@ -401,6 +410,7 @@ class SocialFirestoreService {
     required String chatId,
     required MessageType type,
     required String text,
+    Map<String, Object?>? share,
   }) async {
     final uid = currentUid;
     final user = _auth.currentUser;
@@ -418,6 +428,7 @@ class SocialFirestoreService {
       'senderName': senderName.trim().isEmpty ? 'Usuario' : senderName.trim(),
       'type': type.name,
       'text': text.trim(),
+      'share': share,
       'createdAt': FieldValue.serverTimestamp(),
       // Prevent backend trigger from double-incrementing unread counters.
       'clientHandledUnread': true,
@@ -433,10 +444,7 @@ class SocialFirestoreService {
         if (membersRaw is List) {
           final members = membersRaw.map((e) => e.toString()).toList();
           if (members.length == 2) {
-            final p = members.firstWhere(
-              (m) => m != uid,
-              orElse: () => '',
-            );
+            final p = members.firstWhere((m) => m != uid, orElse: () => '');
             if (p.trim().isNotEmpty) peerUid = p.trim();
           }
         }
@@ -461,23 +469,22 @@ class SocialFirestoreService {
         'hiddenForUsers': FieldValue.arrayRemove(unhide),
         'lastMessage': {
           'senderUid': uid,
-          'senderName': senderName.trim().isEmpty ? 'Usuario' : senderName.trim(),
+          'senderName': senderName.trim().isEmpty
+              ? 'Usuario'
+              : senderName.trim(),
           'type': type.name,
           'text': text.trim(),
+          'share': share,
           'createdAtMs': DateTime.now().millisecondsSinceEpoch,
         },
       };
 
       // WhatsApp-style unread counter for the recipient.
       if (peer.isNotEmpty) {
-        chatUpdates['unreadCountByUser'] = {
-          peer: FieldValue.increment(1),
-        };
+        chatUpdates['unreadCountByUser'] = {peer: FieldValue.increment(1)};
       }
 
-      tx.set(chatRef, {
-        ...chatUpdates,
-      }, SetOptions(merge: true));
+      tx.set(chatRef, {...chatUpdates}, SetOptions(merge: true));
     });
   }
 
@@ -643,9 +650,15 @@ class SocialFirestoreService {
     final senderName = (map['senderName'] as String?)?.trim() ?? 'Usuario';
     final typeRaw = (map['type'] as String?)?.trim();
     final text = (map['text'] as String?) ?? '';
+    final shareRaw = map['share'];
     final createdAtMs = map['createdAtMs'] is int
         ? map['createdAtMs'] as int
         : DateTime.now().millisecondsSinceEpoch;
+
+    Map<String, Object?>? share;
+    if (shareRaw is Map) {
+      share = shareRaw.map((k, v) => MapEntry(k.toString(), v));
+    }
 
     MessageType type = MessageType.text;
     for (final v in MessageType.values) {
@@ -663,6 +676,7 @@ class SocialFirestoreService {
       isMine: senderUid == myUid,
       type: type,
       text: text,
+      share: share,
       createdAtMs: createdAtMs,
     );
   }

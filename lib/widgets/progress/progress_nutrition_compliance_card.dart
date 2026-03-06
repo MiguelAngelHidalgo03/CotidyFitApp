@@ -5,9 +5,14 @@ import '../../models/progress_week_summary.dart';
 import 'progress_section_card.dart';
 
 class ProgressNutritionComplianceCard extends StatelessWidget {
-  const ProgressNutritionComplianceCard({super.key, required this.summary});
+  const ProgressNutritionComplianceCard({
+    super.key,
+    required this.summary,
+    this.onOpenNutrition,
+  });
 
   final ProgressWeekSummary summary;
+  final VoidCallback? onOpenNutrition;
 
   @override
   Widget build(BuildContext context) {
@@ -103,27 +108,80 @@ class ProgressNutritionComplianceCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(summary.nutritionMessage, style: Theme.of(context).textTheme.bodyMedium),
+          if (summary.nutritionAdjustments.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            for (final tip in summary.nutritionAdjustments.take(3)) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(Icons.tips_and_updates_outlined, size: 16, color: CFColors.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(tip, style: Theme.of(context).textTheme.bodyMedium)),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
+          ],
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: CFColors.background,
+              borderRadius: const BorderRadius.all(Radius.circular(18)),
+              border: Border.all(color: CFColors.softGray),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hoy',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${summary.todayMealsLogged} comidas · ${summary.todayCalories} / ${summary.todayCaloriesTarget} kcal',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(summary.todayRecommendation, style: Theme.of(context).textTheme.bodyMedium),
+                if (summary.todayNeedsNutritionAction && onOpenNutrition != null) ...[
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: onOpenNutrition,
+                    icon: const Icon(Icons.restaurant_menu),
+                    label: const Text('Ir a Nutrición'),
+                  ),
+                ],
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: _MiniInfo(
                   label: 'Proteína',
-                  value: '${summary.proteinTotalG} g',
+                  value: '${summary.proteinTotalG} g · ${summary.proteinCompliancePercent}% ',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _MiniInfo(
                   label: 'Carbohidratos',
-                  value: '${summary.carbsTotalG} g',
+                  value: '${summary.carbsTotalG} g · ${summary.carbsCompliancePercent}% ',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _MiniInfo(
                   label: 'Grasas',
-                  value: '${summary.fatTotalG} g',
+                  value: '${summary.fatTotalG} g · ${summary.fatCompliancePercent}% ',
                 ),
               ),
             ],
@@ -135,6 +193,14 @@ class ProgressNutritionComplianceCard extends StatelessWidget {
                 child: _MiniInfo(
                   label: 'Proteína por comida',
                   value: summary.proteinPerMealG <= 0 ? '—' : '${summary.proteinPerMealG.toStringAsFixed(0)} g',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MiniInfo(
+                  label: 'Objetivo diario',
+                  value:
+                      'P ${summary.proteinTargetDailyG} · C ${summary.carbsTargetDailyG} · G ${summary.fatTargetDailyG}',
                 ),
               ),
             ],
