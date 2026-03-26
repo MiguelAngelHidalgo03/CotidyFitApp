@@ -58,9 +58,9 @@ class _MyDayTabState extends State<MyDayTab> {
       final entries = await _myDay
           .getForDate(_day)
           .timeout(const Duration(seconds: 10));
-      final all = await _recipes
-          .getAllRecipes()
-          .timeout(const Duration(seconds: 10));
+      final all = await _recipes.getAllRecipes().timeout(
+        const Duration(seconds: 10),
+      );
       final map = {for (final r in all) r.id: r};
 
       final dateKey = dateKeyFromDate(_day);
@@ -80,9 +80,9 @@ class _MyDayTabState extends State<MyDayTab> {
             );
           }
 
-          final localSavedAll = await _savedMealsService
-              .getAll()
-              .timeout(const Duration(seconds: 5));
+          final localSavedAll = await _savedMealsService.getAll().timeout(
+            const Duration(seconds: 5),
+          );
           if (localSavedAll.isNotEmpty) {
             await _customMealsCloud.setSavedMeals(localSavedAll);
           }
@@ -92,17 +92,17 @@ class _MyDayTabState extends State<MyDayTab> {
         customMeals = await _customMealsCloud
             .getForDateKey(dateKey)
             .timeout(const Duration(seconds: 10));
-        savedMeals = await _customMealsCloud
-            .getSavedMeals()
-            .timeout(const Duration(seconds: 10));
+        savedMeals = await _customMealsCloud.getSavedMeals().timeout(
+          const Duration(seconds: 10),
+        );
       } else {
         final daily = await _dailyData
             .getForDateKey(dateKey)
             .timeout(const Duration(seconds: 10));
         customMeals = daily.customMeals;
-        savedMeals = await _savedMealsService
-            .getAll()
-            .timeout(const Duration(seconds: 5));
+        savedMeals = await _savedMealsService.getAll().timeout(
+          const Duration(seconds: 5),
+        );
       }
 
       if (!mounted) return;
@@ -133,7 +133,9 @@ class _MyDayTabState extends State<MyDayTab> {
   }
 
   Future<void> _openRecipe(String recipeId) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipeId: recipeId)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipeId: recipeId)),
+    );
     await _load();
   }
 
@@ -147,9 +149,7 @@ class _MyDayTabState extends State<MyDayTab> {
     return FirebaseAuth.instance.currentUser?.uid ?? 'anon';
   }
 
-  Future<void> _openIngredientsForRecipe({
-    required String recipeId,
-  }) async {
+  Future<void> _openIngredientsForRecipe({required String recipeId}) async {
     final recipe = _recipeById[recipeId];
     if (recipe == null) return;
 
@@ -171,7 +171,10 @@ class _MyDayTabState extends State<MyDayTab> {
 
     final items = [
       for (final e in labelByKey.entries)
-        IngredientCheckItem(key: e.key, label: e.value.isEmpty ? e.key : e.value),
+        IngredientCheckItem(
+          key: e.key,
+          label: e.value.isEmpty ? e.key : e.value,
+        ),
     ]..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
 
     await showModalBottomSheet<void>(
@@ -313,7 +316,11 @@ class _MyDayTabState extends State<MyDayTab> {
                 builder: (context, setModalState) {
                   final query = q.trim().toLowerCase();
                   final filtered = _savedMeals
-                      .where((m) => query.isEmpty || m.nombre.toLowerCase().contains(query))
+                      .where(
+                        (m) =>
+                            query.isEmpty ||
+                            m.nombre.toLowerCase().contains(query),
+                      )
                       .toList();
 
                   return Column(
@@ -325,9 +332,7 @@ class _MyDayTabState extends State<MyDayTab> {
                           Expanded(
                             child: Text(
                               'Recetas personalizadas',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
+                              style: Theme.of(context).textTheme.titleLarge
                                   ?.copyWith(fontWeight: FontWeight.w900),
                             ),
                           ),
@@ -362,30 +367,39 @@ class _MyDayTabState extends State<MyDayTab> {
                           child: ListView.separated(
                             shrinkWrap: true,
                             itemCount: filtered.length,
-                            separatorBuilder: (_, _) => const SizedBox(height: 8),
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
                             itemBuilder: (context, i) {
                               final meal = filtered[i];
                               return ProgressSectionCard(
                                 padding: const EdgeInsets.all(12),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.bookmark_outline, color: CFColors.primary),
+                                    const Icon(
+                                      Icons.bookmark_outline,
+                                      color: CFColors.primary,
+                                    ),
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             meal.nombre,
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .bodyLarge
-                                                ?.copyWith(fontWeight: FontWeight.w900),
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w900,
+                                                ),
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
                                             '${meal.calorias} kcal · P ${meal.proteinas}g · C ${meal.carbohidratos}g · G ${meal.grasas}g',
-                                            style: Theme.of(context).textTheme.bodyMedium,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodyMedium,
                                           ),
                                         ],
                                       ),
@@ -440,10 +454,16 @@ class _MyDayTabState extends State<MyDayTab> {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                const Icon(Icons.calendar_today_outlined, color: CFColors.primary),
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  color: CFColors.primary,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Mi día · $dayLabel', style: Theme.of(context).textTheme.titleLarge),
+                  child: Text(
+                    'Mi día · $dayLabel',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: _pickDay,
@@ -463,7 +483,9 @@ class _MyDayTabState extends State<MyDayTab> {
                 Expanded(
                   child: Text(
                     'Agregar comida personalizada',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 FilledButton(
@@ -483,7 +505,9 @@ class _MyDayTabState extends State<MyDayTab> {
                 Expanded(
                   child: Text(
                     'Recetas personalizadas (${_savedMeals.length})',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 OutlinedButton(
@@ -499,17 +523,27 @@ class _MyDayTabState extends State<MyDayTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Sin registros', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Sin registros',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 8),
-                  Text('Añade recetas desde el detalle o crea una comida personalizada.', style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    'Añade recetas desde el detalle o crea una comida personalizada.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
           for (final meal in MealType.values) ...[
-            if ((grouped[meal]?.isNotEmpty == true) || (groupedCustom[meal]?.isNotEmpty == true)) ...[
+            if ((grouped[meal]?.isNotEmpty == true) ||
+                (groupedCustom[meal]?.isNotEmpty == true)) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-                child: Text(meal.label, style: Theme.of(context).textTheme.titleLarge),
+                child: Text(
+                  meal.label,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
               for (final e in (grouped[meal] ?? const <MyDayEntryModel>[])) ...[
                 ProgressSectionCard(
@@ -521,20 +555,27 @@ class _MyDayTabState extends State<MyDayTab> {
                       Expanded(
                         child: InkWell(
                           onTap: () => _openRecipe(e.recipeId),
-                          borderRadius: const BorderRadius.all(Radius.circular(8)),
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(8),
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             child: Text(
                               _recipeById[e.recipeId]?.name ?? 'Receta',
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                           ),
                         ),
                       ),
                       IconButton(
                         tooltip: 'Ingredientes',
-                        onPressed: () => _openIngredientsForRecipe(recipeId: e.recipeId),
-                        icon: const Icon(Icons.checklist_outlined, color: CFColors.textSecondary),
+                        onPressed: () =>
+                            _openIngredientsForRecipe(recipeId: e.recipeId),
+                        icon: Icon(
+                          Icons.checklist_outlined,
+                          color: context.cfTextSecondary,
+                        ),
                       ),
                       IconButton(
                         tooltip: 'Abrir',
@@ -544,19 +585,27 @@ class _MyDayTabState extends State<MyDayTab> {
                       IconButton(
                         tooltip: 'Quitar',
                         onPressed: () => _remove(e),
-                        icon: const Icon(Icons.delete_outline, color: CFColors.textSecondary),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          color: context.cfTextSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 10),
               ],
-              for (final e in (groupedCustom[meal] ?? const <CustomMealEntryModel>[])) ...[
+              for (final e
+                  in (groupedCustom[meal] ??
+                      const <CustomMealEntryModel>[])) ...[
                 ProgressSectionCard(
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      const Icon(Icons.restaurant_menu, color: CFColors.primary),
+                      const Icon(
+                        Icons.restaurant_menu,
+                        color: CFColors.primary,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -564,7 +613,8 @@ class _MyDayTabState extends State<MyDayTab> {
                           children: [
                             Text(
                               e.meal.nombre,
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -577,12 +627,18 @@ class _MyDayTabState extends State<MyDayTab> {
                       IconButton(
                         tooltip: 'Guardar para futuro',
                         onPressed: () => _saveCustomMealForFuture(e.meal),
-                        icon: const Icon(Icons.bookmark_add_outlined, color: CFColors.primary),
+                        icon: const Icon(
+                          Icons.bookmark_add_outlined,
+                          color: CFColors.primary,
+                        ),
                       ),
                       IconButton(
                         tooltip: 'Quitar',
                         onPressed: () => _removeCustomMeal(e),
-                        icon: const Icon(Icons.delete_outline, color: CFColors.textSecondary),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          color: context.cfTextSecondary,
+                        ),
                       ),
                     ],
                   ),

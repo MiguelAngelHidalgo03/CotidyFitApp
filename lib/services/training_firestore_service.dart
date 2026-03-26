@@ -27,9 +27,9 @@ class TrainingFirestoreService {
     final out = <String, String>{};
     for (final d in qs.docs) {
       final data = d.data();
-      final name = data['name'];
-      if (name is String && name.trim().isNotEmpty) {
-        out[d.id] = name.trim();
+      final name = _asString(data['name'] ?? data['nombre'], fallback: d.id);
+      if (name.isNotEmpty) {
+        out[d.id] = name;
       }
     }
     return out;
@@ -44,8 +44,7 @@ class TrainingFirestoreService {
 
     for (final doc in routineSnap.docs) {
       final data = doc.data();
-      final name = _asString(data['name']);
-      if (name.isEmpty) continue;
+      final name = _asString(data['name'] ?? data['nombre'], fallback: doc.id);
 
       final exSnap = await doc.reference
           .collection('exercises')
@@ -63,13 +62,19 @@ class TrainingFirestoreService {
         final restSeconds = _asInt(ex['restSeconds'], fallback: 60);
         exercises.add(
           Exercise(
+            id: exerciseId,
             name: exName,
             repsOrTime: '$sets x $reps',
             description: details?.description ?? '',
             imageUrl: _normalizeMediaUrl(details?.imageUrl),
             videoUrl: _normalizeMediaUrl(details?.videoUrl),
             variants: details?.variants ?? const [],
+            howToSteps: details?.howToSteps ?? const [],
+            commonMistakes: details?.commonMistakes ?? const [],
+            tips: details?.tips ?? const [],
             muscleGroup: details?.muscleGroup ?? MuscleGroup.otros,
+            askWeight: details?.askWeight ?? false,
+            trackWeight: details?.trackWeight ?? false,
             sets: sets,
             reps: reps,
             restSeconds: restSeconds > 0 ? restSeconds : null,
@@ -77,27 +82,60 @@ class TrainingFirestoreService {
         );
       }
 
-      final levelRaw = _asString(data['difficultyLevel']);
+      final levelRaw = _asString(
+        data['difficultyLevel'] ??
+            data['difficulty_level'] ??
+            data['level'] ??
+            data['nivel'],
+        fallback: 'intermedio',
+      );
       final level = _prettyLevel(levelRaw);
+      final equipmentNeeded = _normalizeEquipment(
+        _asString(
+          data['equipmentNeeded'] ??
+              data['equipment_needed'] ??
+              data['material'] ??
+              data['material_necesario'],
+          fallback: 'none',
+        ),
+      );
+      final recommendedGoals = _asStringList(
+        data['recommendedForGoals'] ??
+            data['recommended_for_goals'] ??
+            data['goal'] ??
+            data['objetivo'],
+      );
 
       final routine = Workout(
         id: doc.id,
         name: name,
-        category: _asString(data['sportCategory'], fallback: 'General'),
+        category: _asString(
+          data['sportCategory'] ??
+              data['sport_category'] ??
+              data['routineType'] ??
+              data['tipo_de_rutina'] ??
+              data['goal'] ??
+              data['objetivo'],
+          fallback: 'General',
+        ),
         durationMinutes: _asInt(data['durationMinutes'], fallback: 20),
         level: level,
         exercises: exercises,
-        places: _placesFromEquipment(
-          _asString(data['equipmentNeeded'], fallback: 'none'),
-        ),
-        goals: _goalsFromList(_asStringList(data['recommendedForGoals'])),
+        places: _placesFromEquipment(equipmentNeeded),
+        goals: _goalsFromList(recommendedGoals),
         difficulty: _difficultyFromLevel(levelRaw),
-        equipmentNeeded: _asString(data['equipmentNeeded'], fallback: 'none'),
-        sportCategory: _asString(data['sportCategory']),
-        recommendedForGoals: _asStringList(data['recommendedForGoals']),
+        equipmentNeeded: equipmentNeeded,
+        sportCategory: _asString(
+          data['sportCategory'] ?? data['sport_category'],
+        ),
+        recommendedForGoals: recommendedGoals,
         contraindications: _asStringList(data['contraindications']),
-        medicalWarnings: _asStringList(data['medicalWarnings']),
-        recommendedProfileTags: _asStringList(data['recommendedProfileTags']),
+        medicalWarnings: _asStringList(
+          data['medicalWarnings'] ?? data['medical_warnings'],
+        ),
+        recommendedProfileTags: _asStringList(
+          data['recommendedProfileTags'] ?? data['recommended_profile_tags'],
+        ),
       );
       out.add(routine);
     }
@@ -141,15 +179,35 @@ class TrainingFirestoreService {
 
           exercises.add(
             Exercise(
+              id: _asString(map['exerciseId'], fallback: _asString(map['id'])),
               name: _asString(map['name'], fallback: 'Ejercicio'),
               repsOrTime: repsOrTime,
               description: _asString(map['description']),
               imageUrl: _normalizeMediaUrl(_asString(map['imageUrl'])),
               videoUrl: _normalizeMediaUrl(_asString(map['videoUrl'])),
               variants: _parseVariants(map['variants']),
+              howToSteps: _stringListFromAliases(map, const [
+                'howToSteps',
+                'how_to_steps',
+                'steps',
+                'instructions',
+              ]),
+              commonMistakes: _stringListFromAliases(map, const [
+                'commonMistakes',
+                'common_mistakes',
+                'erroresComunes',
+                'errors',
+              ]),
+              tips: _stringListFromAliases(map, const [
+                'tips',
+                'consejos',
+                'advice',
+              ]),
               muscleGroup: muscleGroupFromFirestore(
                 map['muscleGroup'] ?? map['muscle_group'],
               ),
+              askWeight: map['askWeight'] == true,
+              trackWeight: map['trackWeight'] == true,
               sets: sets > 0 ? sets : null,
               reps: reps > 0 ? reps : null,
               restSeconds: restSeconds > 0 ? restSeconds : null,
@@ -168,13 +226,17 @@ class TrainingFirestoreService {
           level: _asString(data['level'], fallback: 'Intermedio'),
           exercises: exercises,
           places: _placesFromEquipment(
-            _asString(data['equipmentNeeded'], fallback: 'none'),
+            _normalizeEquipment(
+              _asString(data['equipmentNeeded'], fallback: 'none'),
+            ),
           ),
           goals: _goalsFromList(_asStringList(data['recommendedForGoals'])),
           difficulty: _difficultyFromLevel(
             _asString(data['difficultyLevel'], fallback: 'intermedio'),
           ),
-          equipmentNeeded: _asString(data['equipmentNeeded'], fallback: 'none'),
+          equipmentNeeded: _normalizeEquipment(
+            _asString(data['equipmentNeeded'], fallback: 'none'),
+          ),
           sportCategory: _asString(data['sportCategory']),
           recommendedForGoals: _asStringList(data['recommendedForGoals']),
           contraindications: _asStringList(data['contraindications']),
@@ -240,39 +302,46 @@ class TrainingFirestoreService {
     }
 
     final daysSnap = await daysCol.orderBy('order').get();
-    final days = <ProgramDayModel>[];
-    for (final dayDoc in daysSnap.docs) {
-      final day = dayDoc.data();
-      final exSnap = await dayDoc.reference
-          .collection('exercises')
-          .orderBy('order')
-          .get();
-      final exercises = <ProgramDayExerciseModel>[];
-      for (final exDoc in exSnap.docs) {
-        final ex = exDoc.data();
-        final exerciseId = _asString(ex['exerciseId']);
-        exercises.add(
-          ProgramDayExerciseModel(
-            id: exDoc.id,
-            exerciseId: exerciseId,
-            exerciseName: exerciseNames[exerciseId] ?? exerciseId,
-            sets: _asInt(ex['sets'], fallback: 3),
-            reps: _asInt(ex['reps'], fallback: 10),
-            restSeconds: _asInt(ex['restSeconds'], fallback: 60),
-            order: _asInt(ex['order']),
-          ),
-        );
-      }
+    var days = await Future.wait(
+      daysSnap.docs.map((dayDoc) async {
+        final day = dayDoc.data();
+        final exSnap = await dayDoc.reference
+            .collection('exercises')
+            .orderBy('order')
+            .get();
+        final exercises = <ProgramDayExerciseModel>[];
+        for (final exDoc in exSnap.docs) {
+          final ex = exDoc.data();
+          final exerciseId = _asString(ex['exerciseId']);
+          exercises.add(
+            ProgramDayExerciseModel(
+              id: exDoc.id,
+              exerciseId: exerciseId,
+              exerciseName: exerciseNames[exerciseId] ?? exerciseId,
+              sets: _asInt(ex['sets'], fallback: 3),
+              reps: _asInt(ex['reps'], fallback: 10),
+              restSeconds: _asInt(ex['restSeconds'], fallback: 60),
+              order: _asInt(ex['order']),
+            ),
+          );
+        }
 
-      days.add(
-        ProgramDayModel(
+        return ProgramDayModel(
           id: dayDoc.id,
-          dayName: _asString(day['dayName'], fallback: dayDoc.id),
-          focus: _asString(day['focus']),
+          dayName: _asString(
+            day['dayName'] ?? day['day_name'] ?? day['nombre'],
+            fallback: dayDoc.id,
+          ),
+          focus: _asString(day['focus'] ?? day['foco']),
           order: _asInt(day['order']),
           exercises: exercises,
-        ),
-      );
+        );
+      }),
+    );
+    days.sort((a, b) => a.order.compareTo(b.order));
+
+    if (days.isEmpty) {
+      days = await _buildDerivedDaysFromStructure(program);
     }
 
     return WeeklyProgramDetailModel(
@@ -310,6 +379,7 @@ class TrainingFirestoreService {
         .doc(uid)
         .collection('generatedRoutines');
     final exerciseById = await _getExerciseDetailsMap();
+    final batch = _db.batch();
 
     for (final day in detail.days) {
       final dayIndex = _dayToIndex(day.dayName, day.order);
@@ -324,6 +394,7 @@ class TrainingFirestoreService {
             final details = exerciseById[ex.exerciseId];
             return {
               'exerciseId': ex.exerciseId,
+              'id': ex.exerciseId,
               'name': ex.exerciseName,
               'repsOrTime': '${ex.sets} x ${ex.reps}',
               'sets': ex.sets,
@@ -334,6 +405,11 @@ class TrainingFirestoreService {
               'description': details?.description ?? '',
               'imageUrl': _normalizeMediaUrl(details?.imageUrl),
               'videoUrl': _normalizeMediaUrl(details?.videoUrl),
+              'howToSteps': details?.howToSteps ?? const <String>[],
+              'commonMistakes': details?.commonMistakes ?? const <String>[],
+              'tips': details?.tips ?? const <String>[],
+              'askWeight': details?.askWeight ?? false,
+              'trackWeight': details?.trackWeight ?? false,
               'variants': [
                 for (final v
                     in (details?.variants ?? const <ExerciseVariant>[]))
@@ -348,29 +424,49 @@ class TrainingFirestoreService {
           })(),
       ];
 
-      await routinesCol.doc(routineId).set({
-        'name': '${detail.program.nombre} · ${day.dayName}',
-        'category': day.focus.trim().isEmpty ? 'Programa semanal' : day.focus,
-        'durationMinutes': detail.program.durationMinutes > 0
-            ? detail.program.durationMinutes
-            : 25,
-        'level': detail.program.nivel,
-        'difficultyLevel': detail.program.nivel.toLowerCase(),
-        'equipmentNeeded': detail.program.equipmentNeeded,
-        'sportCategory': 'programa',
-        'recommendedForGoals': [detail.program.objetivo],
-        'recommendedProfileTags': detail.program.recommendedProfileTags,
-        'contraindications': detail.program.contraindications,
-        'medicalWarnings': detail.program.medicalWarnings,
-        'programId': programId,
-        'dayId': day.id,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'exercises': exercises,
-      }, SetOptions(merge: true));
+      batch.set(
+        routinesCol.doc(routineId),
+        _generatedRoutinePayload(
+          program: detail.program,
+          day: day,
+          programId: programId,
+          exercises: exercises,
+        ),
+        SetOptions(merge: true),
+      );
     }
 
+    await batch.commit();
+
     return assignments;
+  }
+
+  Map<String, Object?> _generatedRoutinePayload({
+    required WeeklyProgramModel program,
+    required ProgramDayModel day,
+    required String programId,
+    required List<Map<String, Object?>> exercises,
+  }) {
+    return {
+      'name': '${program.nombre} · ${day.dayName}',
+      'category': day.focus.trim().isEmpty ? 'Programa semanal' : day.focus,
+      'durationMinutes': program.durationMinutes > 0
+          ? program.durationMinutes
+          : 25,
+      'level': program.nivel,
+      'difficultyLevel': program.nivel.toLowerCase(),
+      'equipmentNeeded': program.equipmentNeeded,
+      'sportCategory': 'programa',
+      'recommendedForGoals': [program.objetivo],
+      'recommendedProfileTags': program.recommendedProfileTags,
+      'contraindications': program.contraindications,
+      'medicalWarnings': program.medicalWarnings,
+      'programId': programId,
+      'dayId': day.id,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'exercises': exercises,
+    };
   }
 
   Future<void> replaceProgramExercise({
@@ -433,6 +529,32 @@ class TrainingFirestoreService {
     }, SetOptions(merge: true));
 
     final daysSnap = await sourceRef.collection('days').get();
+    if (daysSnap.docs.isEmpty) {
+      final detail = await getWeeklyProgramDetail(
+        programId: programId,
+        preferUserCopy: false,
+      );
+      if (detail == null) return;
+      for (final day in detail.days) {
+        final targetDayRef = userProgramRef.collection('days').doc(day.id);
+        await targetDayRef.set({
+          'dayName': day.dayName,
+          'focus': day.focus,
+          'order': day.order,
+        }, SetOptions(merge: false));
+
+        for (final ex in day.exercises) {
+          await targetDayRef.collection('exercises').doc(ex.id).set({
+            'exerciseId': ex.exerciseId,
+            'sets': ex.sets,
+            'reps': ex.reps,
+            'restSeconds': ex.restSeconds,
+            'order': ex.order,
+          }, SetOptions(merge: false));
+        }
+      }
+      return;
+    }
     for (final dayDoc in daysSnap.docs) {
       final targetDayRef = userProgramRef.collection('days').doc(dayDoc.id);
       await targetDayRef.set(dayDoc.data(), SetOptions(merge: false));
@@ -476,54 +598,46 @@ class TrainingFirestoreService {
         .collection('generatedRoutines')
         .doc(routineId);
 
-    await ref.set({
-      'name': '${detail.program.nombre} · ${day.dayName}',
-      'category': day.focus.trim().isEmpty ? 'Programa semanal' : day.focus,
-      'durationMinutes': detail.program.durationMinutes > 0
-          ? detail.program.durationMinutes
-          : 25,
-      'level': detail.program.nivel,
-      'difficultyLevel': detail.program.nivel.toLowerCase(),
-      'equipmentNeeded': detail.program.equipmentNeeded,
-      'sportCategory': 'programa',
-      'recommendedForGoals': [detail.program.objetivo],
-      'recommendedProfileTags': detail.program.recommendedProfileTags,
-      'contraindications': detail.program.contraindications,
-      'medicalWarnings': detail.program.medicalWarnings,
-      'programId': programId,
-      'dayId': dayId,
-      'updatedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-      'exercises': [
-        for (final ex in day.exercises)
-          (() {
-            final details = exerciseById[ex.exerciseId];
-            return {
-              'exerciseId': ex.exerciseId,
-              'name': ex.exerciseName,
-              'repsOrTime': '${ex.sets} x ${ex.reps}',
-              'sets': ex.sets,
-              'reps': ex.reps,
-              'restSeconds': ex.restSeconds,
-              'muscleGroup':
-                  (details?.muscleGroup ?? MuscleGroup.otros).firestoreKey,
-              'description': details?.description ?? '',
-              'imageUrl': _normalizeMediaUrl(details?.imageUrl),
-              'videoUrl': _normalizeMediaUrl(details?.videoUrl),
-              'variants': [
-                for (final v
-                    in (details?.variants ?? const <ExerciseVariant>[]))
-                  {
-                    'name': v.name,
-                    'description': v.description,
-                    'imageUrl': _normalizeMediaUrl(v.imageUrl),
-                    'videoUrl': _normalizeMediaUrl(v.videoUrl),
-                  },
-              ],
-            };
-          })(),
-      ],
-    }, SetOptions(merge: true));
+    await ref.set(
+      _generatedRoutinePayload(
+        program: detail.program,
+        day: day,
+        programId: programId,
+        exercises: [
+          for (final ex in day.exercises)
+            (() {
+              final details = exerciseById[ex.exerciseId];
+              return <String, Object?>{
+                'exerciseId': ex.exerciseId,
+                'id': ex.exerciseId,
+                'name': ex.exerciseName,
+                'repsOrTime': '${ex.sets} x ${ex.reps}',
+                'sets': ex.sets,
+                'reps': ex.reps,
+                'restSeconds': ex.restSeconds,
+                'muscleGroup':
+                    (details?.muscleGroup ?? MuscleGroup.otros).firestoreKey,
+                'description': details?.description ?? '',
+                'imageUrl': _normalizeMediaUrl(details?.imageUrl),
+                'videoUrl': _normalizeMediaUrl(details?.videoUrl),
+                'askWeight': details?.askWeight ?? false,
+                'trackWeight': details?.trackWeight ?? false,
+                'variants': [
+                  for (final v
+                      in (details?.variants ?? const <ExerciseVariant>[]))
+                    {
+                      'name': v.name,
+                      'description': v.description,
+                      'imageUrl': _normalizeMediaUrl(v.imageUrl),
+                      'videoUrl': _normalizeMediaUrl(v.videoUrl),
+                    },
+                ],
+              };
+            })(),
+        ],
+      ),
+      SetOptions(merge: true),
+    );
   }
 
   int? _dayToIndex(String dayName, int order) {
@@ -540,22 +654,119 @@ class TrainingFirestoreService {
     return null;
   }
 
+  Future<List<ProgramDayModel>> _buildDerivedDaysFromStructure(
+    WeeklyProgramModel program,
+  ) async {
+    List<String?>? week;
+    for (final candidate in program.estructuraDias) {
+      final hasWorkouts = candidate.any(
+        (routineId) => routineId != null && routineId.trim().isNotEmpty,
+      );
+      if (hasWorkouts) {
+        week = candidate;
+        break;
+      }
+    }
+    if (week == null) return const [];
+
+    final routineById = <String, Workout>{
+      for (final routine in await getRoutines()) routine.id: routine,
+    };
+    final out = <ProgramDayModel>[];
+    for (var index = 0; index < week.length; index++) {
+      final routineId = week[index];
+      if (routineId == null || routineId.trim().isEmpty) continue;
+      final routine = routineById[routineId.trim()];
+      if (routine == null) continue;
+      out.add(
+        ProgramDayModel(
+          id: 'day_${index + 1}',
+          dayName: _weekdayLabel(index),
+          focus: routine.category,
+          order: index + 1,
+          exercises: [
+            for (
+              var exerciseIndex = 0;
+              exerciseIndex < routine.exercises.length;
+              exerciseIndex++
+            )
+              _programDayExerciseFromWorkoutExercise(
+                routine.exercises[exerciseIndex],
+                order: exerciseIndex + 1,
+              ),
+          ],
+        ),
+      );
+    }
+    return out;
+  }
+
+  ProgramDayExerciseModel _programDayExerciseFromWorkoutExercise(
+    Exercise exercise, {
+    required int order,
+  }) {
+    final parsed = _parseSetsAndReps(exercise.repsOrTime);
+    final exerciseId = exercise.id ?? 'exercise_$order';
+    return ProgramDayExerciseModel(
+      id: '${order}_$exerciseId',
+      exerciseId: exerciseId,
+      exerciseName: exercise.name,
+      sets: exercise.sets ?? parsed?.sets ?? 3,
+      reps: exercise.reps ?? parsed?.reps ?? 10,
+      restSeconds: exercise.restSeconds ?? 60,
+      order: order,
+    );
+  }
+
+  String _weekdayLabel(int index) {
+    const labels = <String>[
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo',
+    ];
+    if (index >= 0 && index < labels.length) return labels[index];
+    return 'Día ${index + 1}';
+  }
+
   Future<Map<String, _ExerciseDetails>> _getExerciseDetailsMap() async {
     if (!_ready || currentUid == null) return const {};
     final qs = await _db.collection('exercises').get();
     final out = <String, _ExerciseDetails>{};
     for (final d in qs.docs) {
       final data = d.data();
-      final name = _asString(data['name']);
+      final name = _asString(data['name'] ?? data['nombre'], fallback: d.id);
       if (name.isEmpty) continue;
       out[d.id] = _ExerciseDetails(
         name: name,
-        description: _asString(data['description']),
-        imageUrl: _asString(data['imageUrl']),
-        videoUrl: _asString(data['videoUrl']),
+        description: _asString(data['description'] ?? data['descripcion']),
+        imageUrl: _asString(data['imageUrl'] ?? data['image_url']),
+        videoUrl: _asString(data['videoUrl'] ?? data['video_url']),
+        howToSteps: _stringListFromAliases(data, const [
+          'howToSteps',
+          'how_to_steps',
+          'steps',
+          'instructions',
+        ]),
+        commonMistakes: _stringListFromAliases(data, const [
+          'commonMistakes',
+          'common_mistakes',
+          'erroresComunes',
+          'errors',
+        ]),
+        tips: _stringListFromAliases(data, const [
+          'tips',
+          'consejos',
+          'advice',
+        ]),
         muscleGroup: muscleGroupFromFirestore(
           data['muscleGroup'] ?? data['muscle_group'],
         ),
+        askWeight: data['askWeight'] == true,
+        trackWeight: data['trackWeight'] == true,
         variants: _parseVariants(data['variants']),
       );
     }
@@ -633,22 +844,51 @@ class TrainingFirestoreService {
 
   String _asString(Object? value, {String fallback = ''}) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
+    if (value != null) {
+      final raw = value.toString().trim();
+      if (raw.isNotEmpty) return raw;
+    }
     return fallback;
   }
 
   int _asInt(Object? value, {int fallback = 0}) {
     if (value is int) return value;
     if (value is num) return value.toInt();
+    if (value is String) {
+      final parsed = num.tryParse(value.trim().replaceAll(',', '.'));
+      if (parsed != null) return parsed.toInt();
+    }
     return fallback;
   }
 
   List<String> _asStringList(Object? value) {
-    if (value is! List) return const [];
-    final out = <String>[];
-    for (final v in value) {
-      if (v is String && v.trim().isNotEmpty) out.add(v.trim());
+    if (value is List) {
+      final out = <String>[];
+      for (final v in value) {
+        final text = _asString(v);
+        if (text.isNotEmpty) out.add(text);
+      }
+      return out;
     }
-    return out;
+    if (value is String && value.trim().isNotEmpty) {
+      return value
+          .split(RegExp(r'[|,\n]'))
+          .map((entry) => entry.trim())
+          .where((entry) => entry.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
+  List<String> _stringListFromAliases(
+    Map<String, dynamic> map,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final values = _asStringList(map[key]);
+      if (values.isNotEmpty) return values;
+    }
+    return const [];
   }
 
   WorkoutDifficulty _difficultyFromLevel(String level) {
@@ -675,8 +915,30 @@ class TrainingFirestoreService {
     }
   }
 
+  String _normalizeEquipment(String equipment) {
+    final normalized = equipment.trim().toLowerCase();
+    switch (normalized) {
+      case '':
+      case 'none':
+      case 'sin material':
+      case 'sin_material':
+      case 'bodyweight':
+      case 'peso corporal':
+        return 'none';
+      case 'home':
+      case 'casa con material':
+      case 'casa_con_material':
+        return 'casa';
+      case 'outdoor':
+      case 'aire libre':
+        return 'parque';
+      default:
+        return normalized;
+    }
+  }
+
   List<WorkoutPlace> _placesFromEquipment(String equipment) {
-    switch (equipment.toLowerCase()) {
+    switch (_normalizeEquipment(equipment)) {
       case 'gym':
         return const [WorkoutPlace.gimnasio];
       case 'casa':
@@ -713,7 +975,12 @@ class _ExerciseDetails {
   final String description;
   final String? imageUrl;
   final String? videoUrl;
+  final List<String> howToSteps;
+  final List<String> commonMistakes;
+  final List<String> tips;
   final MuscleGroup muscleGroup;
+  final bool askWeight;
+  final bool trackWeight;
   final List<ExerciseVariant> variants;
 
   const _ExerciseDetails({
@@ -721,7 +988,12 @@ class _ExerciseDetails {
     required this.description,
     required this.imageUrl,
     required this.videoUrl,
+    required this.howToSteps,
+    required this.commonMistakes,
+    required this.tips,
     required this.muscleGroup,
+    required this.askWeight,
+    required this.trackWeight,
     required this.variants,
   });
 }

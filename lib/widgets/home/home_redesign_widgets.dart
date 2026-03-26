@@ -519,7 +519,7 @@ class WeeklyChallengeBlock extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const Spacer(),
-              _Tag(icon: Icons.workspace_premium_outlined, label: '+${challenge.rewardCfBonus} CF'),
+              _Tag(icon: Icons.workspace_premium_outlined, label: '+${challenge.rewardCfBonus} CF · semana'),
             ],
           ),
         ],

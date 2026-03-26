@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/recipe_model.dart';
 import '../progress/progress_section_card.dart';
+import 'recipe_media.dart';
 
 class RecipeCard extends StatelessWidget {
   const RecipeCard({
@@ -20,6 +21,7 @@ class RecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return ProgressSectionCard(
       padding: const EdgeInsets.all(12),
       child: InkWell(
@@ -29,15 +31,12 @@ class RecipeCard extends StatelessWidget {
           children: [
             Hero(
               tag: 'recipe_${recipe.id}',
-              child: Container(
+              child: RecipeMedia(
+                imageUrl: recipe.imageUrl,
                 width: 86,
                 height: 86,
-                decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.10),
-                  borderRadius: const BorderRadius.all(Radius.circular(18)),
-                  border: Border.all(color: CFColors.softGray),
-                ),
-                child: const Icon(Icons.restaurant_menu, color: CFColors.primary),
+                borderRadius: 18,
+                iconSize: 28,
               ),
             ),
             const SizedBox(width: 12),
@@ -49,7 +48,10 @@ class RecipeCard extends StatelessWidget {
                     recipe.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      height: 1.2,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Wrap(
@@ -57,23 +59,31 @@ class RecipeCard extends StatelessWidget {
                     runSpacing: 6,
                     children: [
                       _Chip(text: recipe.country, icon: Icons.public),
-                      _Chip(text: '${recipe.durationMinutes} min', icon: Icons.schedule),
+                      _Chip(
+                        text: '${recipe.durationMinutes} min',
+                        icon: Icons.schedule,
+                      ),
                       if (showNutritionValues)
-                        _Chip(text: '${recipe.kcalPerServing} kcal', icon: Icons.local_fire_department_outlined),
+                        _Chip(
+                          text: '${recipe.kcalPerServing} kcal',
+                          icon: Icons.local_fire_department_outlined,
+                        ),
                       _Chip(text: recipe.difficulty.label, icon: Icons.speed),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Icon(Icons.star, size: 16, color: CFColors.primary),
+                      Icon(Icons.star, size: 16, color: primary),
                       const SizedBox(width: 4),
                       Text(
                         recipe.ratingAvg.toStringAsFixed(1),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(width: 10),
-                      const Icon(Icons.favorite, size: 16, color: CFColors.primary),
+                      Icon(Icons.favorite, size: 16, color: primary),
                       const SizedBox(width: 4),
                       Text(
                         '${recipe.likes}',
@@ -84,10 +94,7 @@ class RecipeCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: 10),
-              trailing!,
-            ],
+            if (trailing != null) ...[const SizedBox(width: 10), trailing!],
           ],
         ),
       ),
@@ -106,18 +113,21 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(999)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: CFColors.textSecondary),
+          Icon(icon, size: 14, color: context.cfTextSecondary),
           const SizedBox(width: 6),
           Text(
             text,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: CFColors.textSecondary, fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: context.cfTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

@@ -30,7 +30,6 @@ class TrainingWeekSummaryService {
   }
 
   Future<TrainingWeekSummary> getSummaryForWeekStart(DateTime weekStart) async {
-    await _workouts.ensureLoaded();
     final ws = mondayOf(weekStart);
     final planKey = DateUtilsCF.toKey(ws);
     final plan = await _plans.getPlanForWeekKey(planKey);
@@ -41,6 +40,9 @@ class TrainingWeekSummaryService {
     final plannedDays = assignments.keys.toSet();
 
     var plannedMinutes = 0;
+    if (assignments.isNotEmpty) {
+      await _workouts.ensureLoaded();
+    }
     for (final workoutId in assignments.values) {
       final w = _workouts.getWorkoutById(workoutId);
       plannedMinutes += (w?.durationMinutes ?? 0);

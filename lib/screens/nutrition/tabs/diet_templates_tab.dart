@@ -10,6 +10,7 @@ import '../../../services/nutrition_templates_firestore_service.dart';
 import '../../../services/nutrition_personalization_service.dart';
 import '../../../services/profile_service.dart';
 import '../../../services/settings_service.dart';
+import '../../../services/women_cycle_service.dart';
 import '../../../widgets/nutrition/nutrition_template_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../widgets/template_detail_bottom_sheet.dart';
@@ -25,12 +26,14 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
   final _templatesDb = NutritionTemplatesFirestoreService();
   final _profileService = ProfileService();
   final _settingsService = SettingsService();
+  final _cycleService = WomenCycleService();
 
   Set<PriceTier> _priceTiers = const {};
   Set<String> _dietTypes = const {};
   Set<String> _goalTags = const {};
   UserProfile? _profile;
   bool _showNutritionValues = true;
+  bool _prioritizePeriodTemplates = false;
 
   @override
   void initState() {
@@ -41,10 +44,14 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
   Future<void> _loadPreferences() async {
     final profile = await _profileService.getProfile();
     final settings = await _settingsService.getSettings();
+    final cycle = await _cycleService.getCurrentCycle();
     if (!mounted) return;
     setState(() {
       _profile = profile;
       _showNutritionValues = settings.showNutritionValues;
+      _prioritizePeriodTemplates =
+          profile?.sex == UserSex.mujer &&
+          (cycle?.includes(DateTime.now()) ?? false);
     });
   }
 
@@ -76,7 +83,9 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
   Widget build(BuildContext context) {
     final firebaseReady =
         Firebase.apps.isNotEmpty && FirebaseAuth.instance.currentUser != null;
-    final currentUser = firebaseReady ? FirebaseAuth.instance.currentUser : null;
+    final currentUser = firebaseReady
+        ? FirebaseAuth.instance.currentUser
+        : null;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
@@ -88,16 +97,21 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.sell_outlined, color: CFColors.primary),
+                  Icon(Icons.sell_outlined, color: context.cfPrimary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Precio',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   TextButton(
-                    onPressed: (_priceTiers.isEmpty && _dietTypes.isEmpty && _goalTags.isEmpty)
+                    onPressed:
+                        (_priceTiers.isEmpty &&
+                            _dietTypes.isEmpty &&
+                            _goalTags.isEmpty)
                         ? null
                         : () => setState(() {
                             _priceTiers = const {};
@@ -125,12 +139,14 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Icon(Icons.restaurant_menu, color: CFColors.primary),
+                  Icon(Icons.restaurant_menu, color: context.cfPrimary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Tipo de alimentación',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ],
@@ -166,12 +182,14 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Icon(Icons.flag_outlined, color: CFColors.primary),
+                  Icon(Icons.flag_outlined, color: context.cfPrimary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Objetivo',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ],
@@ -213,12 +231,36 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
         ),
         const SizedBox(height: 12),
 
+        if (_prioritizePeriodTemplates)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: ProgressSectionCard(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.self_improvement_outlined,
+                    color: context.cfPrimary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'La lista prioriza plantillas pensadas para acompañarte mejor durante la regla.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
         if (firebaseReady) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
             child: Text(
               'Plantillas',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
             ),
           ),
           StreamBuilder<List<NutritionTemplateModel>>(
@@ -229,7 +271,10 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Error', style: Theme.of(context).textTheme.titleLarge),
+                      Text(
+                        'Error',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                       const SizedBox(height: 8),
                       Text('Error al cargar plantillas: ${snap.error}'),
                     ],
@@ -245,26 +290,39 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
               }
 
               final raw = snap.data ?? const <NutritionTemplateModel>[];
-              final filtered = raw.where((t) {
-                if (_priceTiers.isNotEmpty && !_priceTiers.contains(t.priceTier)) {
-                  return false;
-                }
-                if (_dietTypes.isNotEmpty) {
-                  final dt = t.dietType.trim().toLowerCase();
-                  if (dt.isEmpty || !_dietTypes.contains(dt)) return false;
-                }
-                if (_goalTags.isNotEmpty) {
-                  final tags = {for (final g in t.goalTags) g.trim().toLowerCase()};
-                  final ok = _goalTags.any((g) => tags.contains(g));
-                  if (!ok) return false;
-                }
-                return true;
-              }).toList()
-                ..sort((a, b) {
-                  final sb = NutritionPersonalizationService.templateRecommendationScore(_profile, b);
-                  final sa = NutritionPersonalizationService.templateRecommendationScore(_profile, a);
-                  return sb.compareTo(sa);
-                });
+              final filtered =
+                  raw.where((t) {
+                    if (_priceTiers.isNotEmpty &&
+                        !_priceTiers.contains(t.priceTier)) {
+                      return false;
+                    }
+                    if (_dietTypes.isNotEmpty) {
+                      final dt = t.dietType.trim().toLowerCase();
+                      if (dt.isEmpty || !_dietTypes.contains(dt)) return false;
+                    }
+                    if (_goalTags.isNotEmpty) {
+                      final tags = {
+                        for (final g in t.goalTags) g.trim().toLowerCase(),
+                      };
+                      final ok = _goalTags.any((g) => tags.contains(g));
+                      if (!ok) return false;
+                    }
+                    return true;
+                  }).toList()..sort((a, b) {
+                    final sb =
+                        NutritionPersonalizationService.templateRecommendationScore(
+                          _profile,
+                          b,
+                          isPeriodActive: _prioritizePeriodTemplates,
+                        );
+                    final sa =
+                        NutritionPersonalizationService.templateRecommendationScore(
+                          _profile,
+                          a,
+                          isPeriodActive: _prioritizePeriodTemplates,
+                        );
+                    return sb.compareTo(sa);
+                  });
 
               if (filtered.isEmpty) {
                 return const ProgressSectionCard(
@@ -276,7 +334,8 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
               return FutureBuilder<TemplateInteractions>(
                 future: _templatesDb.getUserInteractions(templateIds: ids),
                 builder: (context, interactionsSnap) {
-                  final interactions = interactionsSnap.data ??
+                  final interactions =
+                      interactionsSnap.data ??
                       const TemplateInteractions(
                         likedTemplateIds: <String>{},
                         ratingByTemplateId: <String, int>{},
@@ -300,20 +359,35 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
                             ),
                           ),
                           onToggleLike: currentUser == null
-                              ? () => ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Inicia sesión para dar like.')),
-                                  )
+                              ? () =>
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Inicia sesión para dar like.',
+                                        ),
+                                      ),
+                                    )
                               : () async {
-                                  await _templatesDb.toggleLike(templateId: t.id);
+                                  await _templatesDb.toggleLike(
+                                    templateId: t.id,
+                                  );
                                   if (!mounted) return;
                                   setState(() {});
                                 },
                           onRate: currentUser == null
-                              ? (_) => ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Inicia sesión para valorar.')),
-                                  )
+                              ? (_) =>
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Inicia sesión para valorar.',
+                                        ),
+                                      ),
+                                    )
                               : (v) async {
-                                  await _templatesDb.setRating(templateId: t.id, rating: v);
+                                  await _templatesDb.setRating(
+                                    templateId: t.id,
+                                    rating: v,
+                                  );
                                   if (!mounted) return;
                                   setState(() {});
                                 },
@@ -339,7 +413,11 @@ class _DietTemplatesTabState extends State<DietTemplatesTab> {
 }
 
 class _FilterPill extends StatelessWidget {
-  const _FilterPill({required this.label, required this.selected, required this.onTap});
+  const _FilterPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
   final bool selected;
@@ -354,23 +432,25 @@ class _FilterPill extends StatelessWidget {
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? CFColors.primary.withValues(alpha: 0.12) : CFColors.background,
+          color: selected ? context.cfPrimaryTint : context.cfSoftSurface,
           borderRadius: const BorderRadius.all(Radius.circular(999)),
-          border: Border.all(color: selected ? CFColors.primary : CFColors.softGray),
+          border: Border.all(
+            color: selected ? context.cfPrimaryTintStrong : context.cfBorder,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected) ...[
-              const Icon(Icons.check, size: 16, color: CFColors.primary),
+              Icon(Icons.check, size: 16, color: context.cfPrimary),
               const SizedBox(width: 6),
             ],
             Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: selected ? CFColors.primary : CFColors.textSecondary,
-                    fontWeight: FontWeight.w800,
-                  ),
+                color: selected ? context.cfPrimary : context.cfTextSecondary,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
         ),
@@ -380,7 +460,11 @@ class _FilterPill extends StatelessWidget {
 }
 
 class _PricePill extends StatelessWidget {
-  const _PricePill({required this.label, required this.selected, required this.onTap});
+  const _PricePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
   final bool selected;
@@ -395,23 +479,25 @@ class _PricePill extends StatelessWidget {
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? CFColors.primary.withValues(alpha: 0.12) : CFColors.background,
+          color: selected ? context.cfPrimaryTint : context.cfSoftSurface,
           borderRadius: const BorderRadius.all(Radius.circular(999)),
-          border: Border.all(color: selected ? CFColors.primary : CFColors.softGray),
+          border: Border.all(
+            color: selected ? context.cfPrimaryTintStrong : context.cfBorder,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected) ...[
-              const Icon(Icons.check, size: 16, color: CFColors.primary),
+              Icon(Icons.check, size: 16, color: context.cfPrimary),
               const SizedBox(width: 6),
             ],
             Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: selected ? CFColors.primary : CFColors.textSecondary,
-                    fontWeight: FontWeight.w800,
-                  ),
+                color: selected ? context.cfPrimary : context.cfTextSecondary,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
         ),

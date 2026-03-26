@@ -219,21 +219,23 @@ class _FilterPill extends StatelessWidget {
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? CFColors.primary.withValues(alpha: 0.12) : CFColors.background,
+          color: selected ? context.cfPrimaryTint : context.cfSoftSurface,
           borderRadius: const BorderRadius.all(Radius.circular(999)),
-          border: Border.all(color: selected ? CFColors.primary : CFColors.softGray),
+          border: Border.all(
+            color: selected ? context.cfPrimaryTintStrong : context.cfBorder,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected) ...[
-              const Icon(Icons.check, size: 16, color: CFColors.primary),
+              Icon(Icons.check, size: 16, color: context.cfPrimary),
               const SizedBox(width: 6),
             ],
             Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: selected ? CFColors.primary : CFColors.textSecondary,
+                    color: selected ? context.cfPrimary : context.cfTextSecondary,
                     fontWeight: FontWeight.w800,
                   ),
             ),

@@ -230,7 +230,7 @@ class _FeelingsSectionState extends State<_FeelingsSection> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      backgroundColor: CFColors.surface,
+      backgroundColor: context.cfSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -291,8 +291,6 @@ class _FeelingsSectionState extends State<_FeelingsSection> {
                       width: double.infinity,
                       child: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: CFColors.primary,
-                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           textStyle: Theme.of(ctx).textTheme.bodyLarge
                               ?.copyWith(fontWeight: FontWeight.w900),
@@ -337,7 +335,7 @@ class _RegisterFeelingsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: CFColors.primary,
+      color: context.cfPrimary,
       borderRadius: const BorderRadius.all(Radius.circular(18)),
       child: InkWell(
         onTap: disabled ? null : onTap,
@@ -347,7 +345,7 @@ class _RegisterFeelingsButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
             borderRadius: const BorderRadius.all(Radius.circular(18)),
-            border: Border.all(color: CFColors.primary.withValues(alpha: 0.22)),
+            border: Border.all(color: context.cfPrimaryTintStrong),
           ),
           child: Row(
             children: [
@@ -397,9 +395,9 @@ class _FeelingsPickerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.primary.withValues(alpha: 0.05),
+        color: context.cfPrimaryTint,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.primary.withValues(alpha: 0.14)),
+        border: Border.all(color: context.cfPrimaryTintStrong),
       ),
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -407,13 +405,13 @@ class _FeelingsPickerRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: CFColors.primary, size: 18),
+              Icon(icon, color: context.cfPrimary, size: 18),
               const SizedBox(width: 8),
               Text(
                 title,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   fontWeight: FontWeight.w900,
-                  color: CFColors.textPrimary,
+                  color: context.cfTextPrimary,
                 ),
               ),
               const Spacer(),
@@ -421,7 +419,7 @@ class _FeelingsPickerRow extends StatelessWidget {
                 _levelText(value),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: CFColors.primary,
+                  color: context.cfPrimary,
                 ),
               ),
             ],
@@ -468,9 +466,9 @@ class _MiniFeelingCard extends StatelessWidget {
     return Container(
       width: 200,
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -478,7 +476,7 @@ class _MiniFeelingCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: CFColors.primary, size: 18),
+              Icon(icon, color: context.cfPrimary, size: 18),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -495,7 +493,7 @@ class _MiniFeelingCard extends StatelessWidget {
             rating == null ? 'Sin registrar' : 'Registrado',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w700,
-              color: rating == null ? CFColors.textSecondary : CFColors.primary,
+              color: rating == null ? context.cfTextSecondary : context.cfPrimary,
             ),
           ),
         ],
@@ -556,7 +554,7 @@ class _StarTap extends StatelessWidget {
           child: Center(
             child: Icon(
               filled ? Icons.star : Icons.star_border,
-              color: CFColors.primary,
+              color: context.cfPrimary,
               size: 20,
             ),
           ),
@@ -805,15 +803,15 @@ class _MiniMetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: CFColors.surface,
+      color: Colors.transparent,
       child: InkWell(
         onTap: disabled ? null : onTap,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
         child: Container(
           decoration: BoxDecoration(
-            color: CFColors.surface,
+            color: context.cfSurface,
             borderRadius: const BorderRadius.all(Radius.circular(18)),
-            border: Border.all(color: CFColors.softGray),
+            border: Border.all(color: context.cfBorder),
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -821,9 +819,14 @@ class _MiniMetricCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(icon, color: CFColors.primary, size: 18),
+                  Icon(icon, color: context.cfPrimary, size: 18),
                   const SizedBox(width: 8),
-                  Text(title, style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
               if (customChild != null) ...[
@@ -836,14 +839,14 @@ class _MiniMetricCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
-                    color: CFColors.textPrimary,
+                    color: context.cfTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   disabled ? 'Bloqueado' : 'Toca para editar',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: CFColors.textSecondary,
+                    color: context.cfTextSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -890,7 +893,7 @@ class _WaterLitersCard extends StatelessWidget {
             key: ValueKey(l.toStringAsFixed(2)),
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               fontWeight: FontWeight.w900,
-              color: CFColors.textPrimary,
+              color: context.cfTextPrimary,
             ),
           ),
         ),
@@ -905,8 +908,8 @@ class _WaterLitersCard extends StatelessWidget {
               return LinearProgressIndicator(
                 value: v,
                 minHeight: 7,
-                backgroundColor: CFColors.softGray,
-                valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                backgroundColor: context.cfBorder,
+                valueColor: AlwaysStoppedAnimation(context.cfPrimary),
               );
             },
           ),
@@ -926,7 +929,7 @@ class _WaterLitersCard extends StatelessWidget {
                 context,
               ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
-            child: const Text('+250 ml'),
+            child: const Text('Añadir un vaso de agua.'),
           ),
         ),
         const SizedBox(height: 6),
@@ -962,9 +965,9 @@ class _AchievementsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(22)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -991,13 +994,13 @@ class _AchievementsCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.10),
+                  color: context.cfPrimaryTint,
                   borderRadius: const BorderRadius.all(Radius.circular(14)),
-                  border: Border.all(color: CFColors.softGray),
+                  border: Border.all(color: context.cfPrimaryTintStrong),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.emoji_events_outlined,
-                  color: CFColors.primary,
+                  color: context.cfPrimary,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1034,9 +1037,9 @@ class _PremiumPromoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.primary.withValues(alpha: 0.08),
+        color: context.cfPrimaryTint,
         borderRadius: const BorderRadius.all(Radius.circular(22)),
-        border: Border.all(color: CFColors.primary.withValues(alpha: 0.16)),
+        border: Border.all(color: context.cfPrimaryTintStrong),
       ),
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -1045,10 +1048,10 @@ class _PremiumPromoCard extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: CFColors.primary.withValues(alpha: 0.12),
+              color: context.cfPrimaryTintStrong,
               borderRadius: const BorderRadius.all(Radius.circular(16)),
             ),
-            child: const Icon(Icons.workspace_premium, color: CFColors.primary),
+            child: Icon(Icons.workspace_premium, color: context.cfPrimary),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1099,7 +1102,7 @@ class _MotivationalFooter extends StatelessWidget {
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
           fontWeight: FontWeight.w600,
-          color: CFColors.textSecondary,
+          color: context.cfTextSecondary,
         ),
       ),
     );

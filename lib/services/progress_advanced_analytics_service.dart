@@ -14,6 +14,7 @@ import '../services/daily_data_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/my_day_repository.dart';
 import '../services/my_day_repository_factory.dart';
+import '../services/personalized_streak_service.dart';
 import '../services/progress_service.dart';
 import '../services/progress_week_summary_service.dart';
 import '../services/recipe_repository.dart';
@@ -39,8 +40,8 @@ class ProgressAdvancedAnalyticsService {
     WeightService? weight,
     AchievementsService? achievements,
     LocalStorageService? storage,
-  }) : _db = db ?? FirebaseFirestore.instance,
-       _auth = auth ?? FirebaseAuth.instance,
+  }) : _dbOverride = db,
+       _authOverride = auth,
        _progress = progress,
        _weekSummary = weekSummary,
        _trainingWeekSummary =
@@ -54,8 +55,11 @@ class ProgressAdvancedAnalyticsService {
        _achievements = achievements ?? AchievementsService(),
        _storage = storage ?? LocalStorageService();
 
-  final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _dbOverride;
+  final FirebaseAuth? _authOverride;
+
+  FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
   final ProgressService? _progress;
   final ProgressWeekSummaryService? _weekSummary;
   final TrainingWeekSummaryService _trainingWeekSummary;
@@ -67,6 +71,8 @@ class ProgressAdvancedAnalyticsService {
   final WeightService _weight;
   final AchievementsService _achievements;
   final LocalStorageService _storage;
+  final PersonalizedStreakService _streakService =
+      const PersonalizedStreakService();
 
   bool get _ready => Firebase.apps.isNotEmpty;
   String? get _uid => _ready ? _auth.currentUser?.uid : null;
@@ -95,9 +101,9 @@ class ProgressAdvancedAnalyticsService {
       _achievements.getAchievementsForCurrentUser(),
       _loadDailySnapshots(from: recentStart, to: now),
       _loadWeeklyGoalsProgress(now: now),
-      _loadMonthlyStatsCached(monthStart: monthStart),
-      _loadMonthlyStatsCached(monthStart: previousMonthStart),
-      _loadMonthlyTimeline(yearStart: yearStart, end: now),
+      _loadMonthlyStatsCached(monthStart: monthStart, profile: profile),
+      _loadMonthlyStatsCached(monthStart: previousMonthStart, profile: profile),
+      _loadMonthlyTimeline(yearStart: yearStart, end: now, profile: profile),
     ]);
 
     final progressData = futures[0] as ProgressData;
@@ -135,6 +141,7 @@ class ProgressAdvancedAnalyticsService {
       weeklyGoalsCurrent: weeklyGoals.current,
       weeklyGoalsPrevious: weeklyGoals.previous,
       snapshots: dailySnapshots,
+      profile: profile,
       now: now,
       weekTrainedMinutes: weekSummary.trainedMinutes as int? ?? 0,
     );
@@ -220,6 +227,17 @@ class ProgressAdvancedAnalyticsService {
       advanced: advanced,
       weight: weight,
       insights: insights,
+    );
+  }
+
+  Future<ProgressWeightSummaryExtended> loadWeightSummary({
+    DateTime? now,
+  }) async {
+    final normalizedNow = DateUtilsCF.dateOnly(now ?? DateTime.now());
+    final history = await _weight.getHistory();
+    return _buildWeightSummaryExtended(
+      weightHistory: history,
+      now: normalizedNow,
     );
   }
 
@@ -425,6 +443,7 @@ class ProgressAdvancedAnalyticsService {
     required double weeklyGoalsCurrent,
     required double weeklyGoalsPrevious,
     required Map<String, _DaySnapshot> snapshots,
+    required UserProfile? profile,
     required DateTime now,
     required int weekTrainedMinutes,
   }) {
@@ -441,7 +460,7 @@ class ProgressAdvancedAnalyticsService {
       if (d == null || d.isAfter(now)) continue;
 
       final row = snapshots[key]!;
-      final active = _isActiveDay(row);
+      final active = _isActiveDay(row, profile: profile);
       activeFlagsOverall.add(active);
 
       if (!d.isBefore(monthCurrent.monthStart)) {
@@ -455,7 +474,14 @@ class ProgressAdvancedAnalyticsService {
 
     final currentStreak = _tailConsecutive(activeFlagsOverall);
     final bestStreak = _maxConsecutive(activeFlagsMonth);
-    final weeklyStreak = monthCurrent.weeklyStreak;
+    final weeklyStreak = _streakService.weeklyStreakFromSnapshots(
+      profile: profile,
+      snapshots: {
+        for (final entry in snapshots.entries)
+          entry.key: _toPersonalizedSnapshot(entry.value),
+      },
+      today: now,
+    );
 
     final dailyGoalsPct = monthCurrent.registeredDays == 0
         ? 0
@@ -1036,15 +1062,15 @@ class ProgressAdvancedAnalyticsService {
     required List<WeightEntry> weightHistory,
     required DateTime now,
   }) {
-    final sorted = weightHistory.toList()..sort((a, b) => a.date.compareTo(b.date));
-    final trimmed = sorted.length <= 60 ? sorted : sorted.sublist(sorted.length - 60);
+    final sorted = weightHistory.toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    final trimmed = sorted.length <= 60
+        ? sorted
+        : sorted.sublist(sorted.length - 60);
 
     final raw = [
       for (final e in trimmed)
-        ChartPoint(
-          label: '${e.date.day}/${e.date.month}',
-          value: e.weight,
-        ),
+        ChartPoint(label: '${e.date.day}/${e.date.month}', value: e.weight),
     ];
 
     final smoothed = _movingAverageWeight(trimmed, window: 7);
@@ -1245,6 +1271,7 @@ class ProgressAdvancedAnalyticsService {
 
   Future<_MonthlyStats> _loadMonthlyStatsCached({
     required DateTime monthStart,
+    required UserProfile? profile,
   }) async {
     final uid = _uid;
     final monthEnd = DateTime(monthStart.year, monthStart.month + 1, 0);
@@ -1252,6 +1279,7 @@ class ProgressAdvancedAnalyticsService {
     final effectiveEnd = monthEnd.isAfter(today) ? today : monthEnd;
     final monthId =
         '${monthStart.year}-${monthStart.month.toString().padLeft(2, '0')}';
+    final configKey = _streakService.preferencesFor(profile).cacheKey;
 
     if (uid != null) {
       try {
@@ -1265,7 +1293,8 @@ class ProgressAdvancedAnalyticsService {
 
         final updatedAt = data?['updatedAt'];
         final updated = _asDateTime(updatedAt);
-        if (data != null && updated != null) {
+        final cachedConfigKey = data?['streakConfigKey'] as String?;
+        if (data != null && updated != null && cachedConfigKey == configKey) {
           final age = DateTime.now().difference(updated);
           if (age.inHours < 12) {
             final parsed = _MonthlyStats.fromMap(data, monthStart: monthStart);
@@ -1276,9 +1305,11 @@ class ProgressAdvancedAnalyticsService {
         final computed = await _computeMonthlyStats(
           monthStart: monthStart,
           monthEnd: effectiveEnd,
+          profile: profile,
         );
         await ref.set({
           ...computed.toMap(),
+          'streakConfigKey': configKey,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
         return computed;
@@ -1286,21 +1317,27 @@ class ProgressAdvancedAnalyticsService {
         return _computeMonthlyStats(
           monthStart: monthStart,
           monthEnd: effectiveEnd,
+          profile: profile,
         );
       }
     }
 
-    return _computeMonthlyStats(monthStart: monthStart, monthEnd: effectiveEnd);
+    return _computeMonthlyStats(
+      monthStart: monthStart,
+      monthEnd: effectiveEnd,
+      profile: profile,
+    );
   }
 
   Future<List<_MonthlyStats>> _loadMonthlyTimeline({
     required DateTime yearStart,
     required DateTime end,
+    required UserProfile? profile,
   }) async {
     final out = <_MonthlyStats>[];
     var current = DateTime(yearStart.year, yearStart.month, 1);
     while (!current.isAfter(end)) {
-      out.add(await _loadMonthlyStatsCached(monthStart: current));
+      out.add(await _loadMonthlyStatsCached(monthStart: current, profile: profile));
       current = DateTime(current.year, current.month + 1, 1);
     }
     return out;
@@ -1309,6 +1346,7 @@ class ProgressAdvancedAnalyticsService {
   Future<_MonthlyStats> _computeMonthlyStats({
     required DateTime monthStart,
     required DateTime monthEnd,
+    required UserProfile? profile,
   }) async {
     final snapshots = await _loadDailySnapshots(from: monthStart, to: monthEnd);
     final rows = snapshots.values.toList();
@@ -1323,7 +1361,7 @@ class ProgressAdvancedAnalyticsService {
     final activeFlags = <bool>[];
     for (final r in rows) {
       if (r.hasData) registered += 1;
-      final active = _isActiveDay(r);
+      final active = _isActiveDay(r, profile: profile);
       if (active) activeDays += 1;
       activeFlags.add(active);
 
@@ -1363,12 +1401,24 @@ class ProgressAdvancedAnalyticsService {
     );
   }
 
-  bool _isActiveDay(_DaySnapshot row) {
-    return row.workoutCompleted ||
-        row.steps >= 6000 ||
-        row.mealsLoggedCount >= 2 ||
-        row.meditationMinutes >= 5 ||
-        row.cf >= 55;
+  bool _isActiveDay(_DaySnapshot row, {required UserProfile? profile}) {
+    return _streakService.isCompletedDay(
+      profile: profile,
+      snapshot: _toPersonalizedSnapshot(row),
+    );
+  }
+
+  PersonalizedStreakDaySnapshot _toPersonalizedSnapshot(_DaySnapshot row) {
+    return PersonalizedStreakDaySnapshot(
+      workoutCompleted: row.workoutCompleted,
+      steps: row.steps,
+      mealsLoggedCount: row.mealsLoggedCount,
+      meditationMinutes: row.meditationMinutes,
+      waterLiters: row.waterLiters,
+      cf: row.cf,
+      moodRegistered: row.mood > 0,
+      hasData: row.hasData,
+    );
   }
 
   List<ChartPoint> _movingAverageWeight(

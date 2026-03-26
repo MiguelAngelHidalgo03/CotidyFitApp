@@ -13,10 +13,23 @@ class ProgressPremiumCard extends StatelessWidget {
       future: SubscriptionService.hasAccess(),
       builder: (context, snapshot) {
         final hasAccess = snapshot.data ?? false;
+        final statusBackground = hasAccess
+            ? Colors.green.withValues(alpha: context.cfIsDark ? 0.16 : 0.12)
+            : const Color(0xFFF59E0B).withValues(
+                alpha: context.cfIsDark ? 0.18 : 0.12,
+              );
+        final statusBorder = hasAccess
+            ? Colors.green.withValues(alpha: context.cfIsDark ? 0.32 : 0.35)
+            : const Color(0xFFF59E0B).withValues(
+                alpha: context.cfIsDark ? 0.40 : 0.45,
+              );
+        final statusText = hasAccess
+            ? (context.cfIsDark ? const Color(0xFF86EFAC) : Colors.green.shade800)
+            : (context.cfIsDark ? const Color(0xFFFCD34D) : Colors.amber.shade900);
 
         return ProgressSectionCard(
-          backgroundColor: CFColors.primary.withValues(alpha: 0.05),
-          borderColor: CFColors.primary.withValues(alpha: 0.18),
+          backgroundColor: context.cfSoftSurface,
+          borderColor: context.cfPrimaryTintStrong,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -26,14 +39,15 @@ class ProgressPremiumCard extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: CFColors.primary.withValues(alpha: 0.10),
+                      color: context.cfPrimaryTint,
                       borderRadius: const BorderRadius.all(Radius.circular(16)),
+                      border: Border.all(color: context.cfPrimaryTintStrong),
                     ),
                     child: Icon(
                       hasAccess
                           ? Icons.workspace_premium_outlined
                           : Icons.lock_outline,
-                      color: CFColors.primary,
+                      color: context.cfPrimary,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -48,23 +62,15 @@ class ProgressPremiumCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: hasAccess
-                          ? Colors.green.withValues(alpha: 0.12)
-                          : Colors.amber.withValues(alpha: 0.12),
+                      color: statusBackground,
                       borderRadius: const BorderRadius.all(Radius.circular(999)),
-                      border: Border.all(
-                        color: hasAccess
-                            ? Colors.green.withValues(alpha: 0.35)
-                            : Colors.amber.withValues(alpha: 0.45),
-                      ),
+                      border: Border.all(color: statusBorder),
                     ),
                     child: Text(
                       hasAccess ? 'Activo' : 'Bloqueado',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w900,
-                            color: hasAccess
-                                ? Colors.green.shade800
-                                : Colors.amber.shade900,
+                            color: statusText,
                           ),
                     ),
                   ),
@@ -113,14 +119,14 @@ class _BenefitRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Icon(Icons.check_circle_outline, size: 18, color: CFColors.primary),
+        Icon(Icons.check_circle_outline, size: 18, color: context.cfPrimary),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
             text,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w700,
-                  color: CFColors.textPrimary,
+                  color: context.cfTextPrimary,
                 ),
           ),
         ),

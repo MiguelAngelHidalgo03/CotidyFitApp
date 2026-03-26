@@ -2,14 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-import 'location_permission_service.dart';
 
 class PushTokenService {
-  static const _kLocationPermissionPrompted = 'cf_location_permission_prompted_v1';
-
   final FirebaseAuth _auth;
   final FirebaseFirestore _db;
   final FirebaseMessaging _messaging;
@@ -18,9 +12,9 @@ class PushTokenService {
     FirebaseAuth? auth,
     FirebaseFirestore? db,
     FirebaseMessaging? messaging,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _db = db ?? FirebaseFirestore.instance,
-        _messaging = messaging ?? FirebaseMessaging.instance;
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _db = db ?? FirebaseFirestore.instance,
+       _messaging = messaging ?? FirebaseMessaging.instance;
 
   Future<void> registerCurrentDeviceToken() async {
     // Web push requires extra setup (service worker + VAPID key). If not configured,
@@ -29,17 +23,6 @@ class PushTokenService {
 
     final user = _auth.currentUser;
     if (user == null) return;
-
-    try {
-      // iOS permissions (no-op elsewhere)
-      await _messaging.requestPermission();
-    } catch (_) {
-      // best-effort
-    }
-
-    // Ask for location permission once so Home can show location + weather.
-    // (Requested by UX: prompt location alongside notifications on install.)
-    await _requestLocationPermissionOnce();
 
     String? token;
     try {
@@ -52,42 +35,44 @@ class PushTokenService {
 
     final uid = user.uid;
     final platform = kIsWeb
-      ? 'web'
-      : switch (defaultTargetPlatform) {
-        TargetPlatform.iOS => 'ios',
-        TargetPlatform.android => 'android',
-        TargetPlatform.macOS => 'macos',
-        TargetPlatform.windows => 'windows',
-        TargetPlatform.linux => 'linux',
-        TargetPlatform.fuchsia => 'fuchsia',
-        };
+        ? 'web'
+        : switch (defaultTargetPlatform) {
+            TargetPlatform.iOS => 'ios',
+            TargetPlatform.android => 'android',
+            TargetPlatform.macOS => 'macos',
+            TargetPlatform.windows => 'windows',
+            TargetPlatform.linux => 'linux',
+            TargetPlatform.fuchsia => 'fuchsia',
+          };
 
-    final ref = _db.collection('users').doc(uid).collection('tokens').doc(token);
-    await ref.set(
-      {
-        'token': token,
-        'platform': platform,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    final ref = _db
+        .collection('users')
+        .doc(uid)
+        .collection('tokens')
+        .doc(token);
+    await ref.set({
+      'token': token,
+      'platform': platform,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
     // Keep token updated if it refreshes (best-effort, never throw unhandled).
     _messaging.onTokenRefresh.listen(
       (t) async {
         try {
           if (t.trim().isEmpty) return;
-          final r = _db.collection('users').doc(uid).collection('tokens').doc(t);
-          await r.set(
-            {
-              'token': t,
-              'platform': platform,
-              'updatedAt': FieldValue.serverTimestamp(),
-              'createdAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          );
+          final r = _db
+              .collection('users')
+              .doc(uid)
+              .collection('tokens')
+              .doc(t);
+          await r.set({
+            'token': t,
+            'platform': platform,
+            'updatedAt': FieldValue.serverTimestamp(),
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
         } catch (_) {
           // best-effort
         }
@@ -96,30 +81,5 @@ class PushTokenService {
         // best-effort
       },
     );
-  }
-
-  Future<void> _requestLocationPermissionOnce() async {
-    if (kIsWeb) return;
-    if (defaultTargetPlatform != TargetPlatform.android &&
-        defaultTargetPlatform != TargetPlatform.iOS) {
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_kLocationPermissionPrompted) == true) return;
-
-    try {
-      // Give the OS a moment in case a notification dialog just appeared.
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-
-      final current = await Geolocator.checkPermission();
-      if (current == LocationPermission.denied) {
-        await LocationPermissionService.ensurePermission();
-      }
-    } catch (_) {
-      // best-effort
-    } finally {
-      await prefs.setBool(_kLocationPermissionPrompted, true);
-    }
   }
 }

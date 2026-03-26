@@ -9,10 +9,7 @@ import '../models/recipe_model.dart';
 import '../utils/date_utils.dart';
 
 class WomenCycleData {
-  const WomenCycleData({
-    required this.start,
-    this.end,
-  });
+  const WomenCycleData({required this.start, this.end});
 
   final DateTime start;
   final DateTime? end;
@@ -30,9 +27,9 @@ class WomenCycleData {
   }
 
   Map<String, Object?> toJson() => {
-        'startKey': DateUtilsCF.toKey(start),
-        if (end != null) 'endKey': DateUtilsCF.toKey(end!),
-      };
+    'startKey': DateUtilsCF.toKey(start),
+    if (end != null) 'endKey': DateUtilsCF.toKey(end!),
+  };
 
   static WomenCycleData? fromMap(Map<String, dynamic> map) {
     final startKey = (map['startKey'] as String? ?? '').trim();
@@ -52,21 +49,26 @@ class WomenCycleFoodTip {
   const WomenCycleFoodTip({
     required this.title,
     required this.reason,
+    this.recipes = const [],
   });
 
   final String title;
   final String reason;
+  final List<RecipeModel> recipes;
 }
 
 class WomenCycleService {
   WomenCycleService({FirebaseFirestore? db, FirebaseAuth? auth})
-      : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+    : _dbOverride = db,
+      _authOverride = auth;
 
   static const _kLocalKey = 'cf_women_cycle_current_v1';
 
-  final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _dbOverride;
+  final FirebaseAuth? _authOverride;
+
+  FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   bool get _ready => Firebase.apps.isNotEmpty;
   String? get _uid => _ready ? _auth.currentUser?.uid : null;
@@ -77,7 +79,12 @@ class WomenCycleService {
     final uid = _uid;
     if (uid != null) {
       try {
-        final snap = await _db.collection('users').doc(uid).collection('womenCycle').doc('current').get();
+        final snap = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('womenCycle')
+            .doc('current')
+            .get();
         final data = snap.data();
         if (data != null) {
           final parsed = WomenCycleData.fromMap(data);
@@ -170,10 +177,10 @@ class WomenCycleService {
               .collection('cycleLogs')
               .doc(cycleId)
               .set({
-            ...data.toJson(),
-            'cycleId': cycleId,
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+                ...data.toJson(),
+                'cycleId': cycleId,
+                'updatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
         }
       } catch (_) {
         // local already saved
@@ -193,11 +200,23 @@ class WomenCycleService {
     final out = <WomenCycleFoodTip>[];
 
     final highProtein = recipes
-        .where((r) => r.macrosPerServing.proteinG >= 22 || r.goals.contains(RecipeGoal.highProtein))
+        .where(
+          (r) =>
+              r.macrosPerServing.proteinG >= 22 ||
+              r.goals.contains(RecipeGoal.highProtein),
+        )
         .take(2)
         .toList();
 
-    final ironKeywords = ['espinaca', 'lenteja', 'garbanzo', 'ternera', 'hígado', 'alubia', 'acelga'];
+    final ironKeywords = [
+      'espinaca',
+      'lenteja',
+      'garbanzo',
+      'ternera',
+      'hígado',
+      'alubia',
+      'acelga',
+    ];
     final ironRich = recipes
         .where((r) {
           final hay = r.ingredients.map((i) => i.name.toLowerCase()).join(' ');
@@ -207,15 +226,20 @@ class WomenCycleService {
         .toList();
 
     final moderateCarbs = recipes
-        .where((r) => r.macrosPerServing.carbsG >= 25 && r.macrosPerServing.carbsG <= 55)
+        .where(
+          (r) =>
+              r.macrosPerServing.carbsG >= 25 &&
+              r.macrosPerServing.carbsG <= 55,
+        )
         .take(2)
         .toList();
 
     if (highProtein.isNotEmpty) {
       out.add(
         WomenCycleFoodTip(
-          title: 'Proteína útil: ${highProtein.map((e) => e.name).join(' · ')}',
+          title: 'Proteína útil',
           reason: 'Ayuda a recuperar energía y reducir antojos.',
+          recipes: highProtein,
         ),
       );
     }
@@ -223,8 +247,9 @@ class WomenCycleService {
     if (ironRich.isNotEmpty) {
       out.add(
         WomenCycleFoodTip(
-          title: 'Hierro: ${ironRich.map((e) => e.name).join(' · ')}',
+          title: 'Hierro',
           reason: 'Útil en días de regla para fatiga y vitalidad.',
+          recipes: ironRich,
         ),
       );
     }
@@ -232,8 +257,9 @@ class WomenCycleService {
     if (moderateCarbs.isNotEmpty) {
       out.add(
         WomenCycleFoodTip(
-          title: 'Carbohidrato estable: ${moderateCarbs.map((e) => e.name).join(' · ')}',
+          title: 'Carbohidrato estable',
           reason: 'Mejor tolerancia energética y menos hinchazón por picos.',
+          recipes: moderateCarbs,
         ),
       );
     }

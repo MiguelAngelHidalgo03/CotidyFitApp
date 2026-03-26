@@ -8,6 +8,7 @@ import '../models/exercise.dart';
 import '../models/workout.dart';
 import '../services/workout_session_service.dart';
 import '../services/workout_sound_service.dart';
+import '../widgets/training/exercise_guidance_bottom_sheet.dart';
 
 enum _CountdownKind { exercise, rest }
 
@@ -34,6 +35,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   _RestKind? _restKind;
   int? _remainingSeconds;
   int? _selectedVariantIndex;
+  String? _statusMessage;
 
   final Map<int, double> _weightKgByExerciseIndex = {};
 
@@ -57,19 +59,21 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     super.dispose();
   }
 
-  void _setupForCurrentExercise() {
+  void _setupForCurrentExercise({String? statusMessage}) {
     _timer?.cancel();
     _isRunning = false;
     _countdownKind = null;
     _restKind = null;
     _setIndex = 0;
 
-    final seconds = _current.durationSeconds ?? _parseSeconds(_current.repsOrTime);
+    final seconds =
+        _current.durationSeconds ?? _parseSeconds(_current.repsOrTime);
     if (seconds != null) {
       _countdownKind = _CountdownKind.exercise;
     }
     _remainingSeconds = seconds;
     _selectedVariantIndex = null;
+    _statusMessage = statusMessage;
     setState(() {});
   }
 
@@ -77,7 +81,9 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     if (url == null || url.trim().isEmpty) return '';
     final raw = url.trim();
 
-    final fileIdMatch = RegExp(r'drive\.google\.com/file/d/([^/]+)').firstMatch(raw);
+    final fileIdMatch = RegExp(
+      r'drive\.google\.com/file/d/([^/]+)',
+    ).firstMatch(raw);
     if (fileIdMatch != null) {
       final id = fileIdMatch.group(1);
       if (id != null && id.isNotEmpty) {
@@ -116,6 +122,25 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     return '$mm:$ss';
   }
 
+  bool _shouldAskWeight(Exercise exercise) {
+    return exercise.askWeight || exercise.trackWeight;
+  }
+
+  bool _shouldTrackWeight(Exercise exercise) {
+    return exercise.trackWeight;
+  }
+
+  Future<void> _captureWeightIfNeeded(Exercise exercise) async {
+    if (!_shouldAskWeight(exercise)) return;
+
+    final weightKg = await _promptWeightKg(exercise: exercise);
+    if (weightKg == null) return;
+
+    if (_shouldTrackWeight(exercise)) {
+      _weightKgByExerciseIndex[_index] = weightKg;
+    }
+  }
+
   void _toggleTimer() {
     if (_countdownKind != _CountdownKind.exercise) return;
     if (_remainingSeconds == null) return;
@@ -127,7 +152,10 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     }
 
     _timer?.cancel();
-    setState(() => _isRunning = true);
+    setState(() {
+      _isRunning = true;
+      _statusMessage = null;
+    });
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
 
@@ -138,14 +166,13 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         setState(() {
           _remainingSeconds = 0;
           _isRunning = false;
+          _statusMessage =
+              'Temporizador finalizado. Marca el ejercicio cuando quieras.';
         });
         // Play configurable end sound (stored in Profile > Configuración).
         // Fire-and-forget to avoid blocking UI.
         // ignore: discarded_futures
         WorkoutSoundService().playSelectedEndSound();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Temporizador finalizado.')),
-        );
         return;
       }
 
@@ -165,6 +192,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     _countdownKind = _CountdownKind.rest;
     _remainingSeconds = seconds;
     _isRunning = true;
+    _statusMessage = null;
     setState(() {});
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -181,9 +209,6 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
         // ignore: discarded_futures
         WorkoutSoundService().playSelectedEndSound();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Descanso finalizado.')),
-        );
 
         final restKind = _restKind;
         _restKind = null;
@@ -191,7 +216,14 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         _remainingSeconds = null;
 
         if (restKind == _RestKind.betweenSets) {
-          setState(() => _setIndex += 1);
+          final totalSets = (_current.sets != null && _current.sets! > 0)
+              ? _current.sets!
+              : 1;
+          setState(() {
+            _setIndex += 1;
+            _statusMessage =
+                'Descanso finalizado. Sigue con la serie ${_setIndex + 1} de $totalSets.';
+          });
           return;
         }
 
@@ -201,11 +233,15 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
             setState(() {
               _isSummary = true;
               _isRunning = false;
+              _statusMessage = null;
             });
             return;
           }
-          setState(() => _index += 1);
-          _setupForCurrentExercise();
+          _index += 1;
+          _setupForCurrentExercise(
+            statusMessage:
+                'Descanso finalizado. Siguiente ejercicio: ${widget.workout.exercises[_index].name}.',
+          );
         }
         return;
       }
@@ -247,7 +283,9 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                   child: const Text('Omitir'),
                 ),
                 FilledButton(
-                  onPressed: canSave ? () => Navigator.of(context).pop(parsed) : null,
+                  onPressed: canSave
+                      ? () => Navigator.of(context).pop(parsed)
+                      : null,
                   child: const Text('Guardar'),
                 ),
               ],
@@ -275,17 +313,11 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
       return;
     }
 
-    final weightKg = await _promptWeightKg(exercise: ex);
-    if (weightKg != null) {
-      _weightKgByExerciseIndex[_index] = weightKg;
-    }
+    await _captureWeightIfNeeded(ex);
+    if (!mounted) return;
 
     final msg = _exerciseMotivation[_index % _exerciseMotivation.length];
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
-      );
-    }
+    if (mounted) setState(() => _statusMessage = msg);
 
     if (_index >= totalExercises - 1) {
       _timer?.cancel();
@@ -299,15 +331,17 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     _startRest(kind: _RestKind.betweenExercises, seconds: restSeconds);
   }
 
-  void _markCompleted() {
+  Future<void> _markCompleted() async {
     if (_isSummary) return;
 
     if (_countdownKind == _CountdownKind.rest) return;
 
+    final ex = _current;
+    await _captureWeightIfNeeded(ex);
+    if (!mounted) return;
+
     final msg = _exerciseMotivation[_index % _exerciseMotivation.length];
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
-    );
+    setState(() => _statusMessage = msg);
 
     if (_index >= widget.workout.exercises.length - 1) {
       _timer?.cancel();
@@ -334,6 +368,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         final ex = widget.workout.exercises[i];
         exerciseLogs.add({
           'order': i,
+          if (ex.id != null && ex.id!.trim().isNotEmpty) 'exerciseId': ex.id,
           'name': ex.name,
           'sets': ex.sets,
           'reps': ex.reps,
@@ -360,9 +395,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isSummary ? 'Resumen' : 'Sesión'),
-      ),
+      appBar: AppBar(title: Text(_isSummary ? 'Resumen' : 'Sesión')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -374,6 +407,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
   Widget _buildSession(BuildContext context) {
     final theme = Theme.of(context);
+    final primary = context.cfPrimary;
     final total = widget.workout.exercises.length;
     final ex = _current;
     final seconds = ex.durationSeconds ?? _parseSeconds(ex.repsOrTime);
@@ -382,14 +416,19 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     final sets = (ex.sets != null && ex.sets! > 0) ? ex.sets! : 1;
     final reps = ex.reps;
     final isRepBased = seconds == null && reps != null;
-    final selectedVariant = (_selectedVariantIndex != null &&
+    final selectedVariant =
+        (_selectedVariantIndex != null &&
             _selectedVariantIndex! >= 0 &&
             _selectedVariantIndex! < ex.variants.length)
         ? ex.variants[_selectedVariantIndex!]
         : null;
 
-    final imageUrl = _normalizeMediaUrl(selectedVariant?.imageUrl ?? ex.imageUrl);
-    final videoUrl = _normalizeMediaUrl(selectedVariant?.videoUrl ?? ex.videoUrl);
+    final imageUrl = _normalizeMediaUrl(
+      selectedVariant?.imageUrl ?? ex.imageUrl,
+    );
+    final videoUrl = _normalizeMediaUrl(
+      selectedVariant?.videoUrl ?? ex.videoUrl,
+    );
     final description = (() {
       final d = (selectedVariant?.description ?? ex.description).trim();
       if (d.isEmpty) return 'Sin descripción disponible.';
@@ -403,15 +442,24 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         const SizedBox(height: 8),
         Text(
           'Ejercicio ${_index + 1} de $total',
-          style: theme.textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: context.cfTextSecondary,
+          ),
         ),
         const SizedBox(height: 18),
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: CFColors.surface,
+            color: context.cfSurface,
             borderRadius: const BorderRadius.all(Radius.circular(18)),
-            border: Border.all(color: CFColors.softGray),
+            border: Border.all(color: context.cfBorder),
+            boxShadow: [
+              BoxShadow(
+                color: context.cfShadow,
+                blurRadius: context.cfIsDark ? 24 : 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           child: Column(
@@ -421,21 +469,31 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                 height: 140,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.06),
+                  color: context.cfPrimaryTint,
                   borderRadius: const BorderRadius.all(Radius.circular(16)),
-                  border: Border.all(color: CFColors.primary.withValues(alpha: 0.14)),
+                  border: Border.all(color: context.cfPrimaryTintStrong),
                 ),
                 child: imageUrl.isEmpty
-                    ? const Center(
-                        child: Icon(Icons.image_outlined, color: CFColors.primary, size: 40),
+                    ? Center(
+                        child: Icon(
+                          Icons.image_outlined,
+                          color: primary,
+                          size: 40,
+                        ),
                       )
                     : ClipRRect(
-                        borderRadius: const BorderRadius.all(Radius.circular(16)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(16),
+                        ),
                         child: Image.network(
                           imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Center(
-                            child: Icon(Icons.broken_image_outlined, color: CFColors.primary, size: 36),
+                          errorBuilder: (context, error, stackTrace) => Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: primary,
+                              size: 36,
+                            ),
                           ),
                         ),
                       ),
@@ -445,7 +503,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                 ex.name,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: CFColors.textPrimary,
+                  color: context.cfTextPrimary,
                 ),
               ),
               const SizedBox(height: 10),
@@ -458,14 +516,26 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                 Text(
                   'Serie ${_setIndex + 1} de $sets',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: CFColors.textSecondary,
+                    color: context.cfTextSecondary,
                   ),
                 ),
               ],
               const SizedBox(height: 10),
               Text(
                 description,
-                style: theme.textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: context.cfTextSecondary,
+                  height: 1.38,
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => showExerciseGuidanceBottomSheet(
+                  context,
+                  exercise: ex,
+                ),
+                icon: const Icon(Icons.menu_book_outlined),
+                label: const Text('Cómo hacerlo'),
               ),
               if (videoUrl.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -493,13 +563,18 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                       ),
                   ],
                 ),
+              if (_statusMessage != null &&
+                  _statusMessage!.trim().isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _SessionStatusBanner(message: _statusMessage!),
+              ],
               if (isResting) ...[
                 const SizedBox(height: 14),
                 Text(
                   'Descanso',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: CFColors.textPrimary,
+                    color: context.cfTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -507,7 +582,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                   _format(_remainingSeconds ?? 0),
                   style: theme.textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: CFColors.primary,
+                    color: primary,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -515,10 +590,10 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                   _restKind == _RestKind.betweenSets
                       ? 'Siguiente serie: ${(_setIndex + 2).clamp(1, sets)} de $sets'
                       : (_index < total - 1
-                          ? 'Siguiente ejercicio: ${widget.workout.exercises[_index + 1].name}'
-                          : 'Siguiente ejercicio'),
+                            ? 'Siguiente ejercicio: ${widget.workout.exercises[_index + 1].name}'
+                            : 'Siguiente ejercicio'),
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: CFColors.textSecondary,
+                    color: context.cfTextSecondary,
                   ),
                 ),
               ] else if (seconds != null) ...[
@@ -527,7 +602,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
                   _format(_remainingSeconds ?? seconds),
                   style: theme.textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: CFColors.primary,
+                    color: primary,
                   ),
                 ),
               ],
@@ -563,7 +638,9 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               child: Text(
                 (_setIndex < sets - 1)
                     ? 'Serie completada'
-                    : (_index == total - 1 ? 'Finalizar' : 'Ejercicio completado'),
+                    : (_index == total - 1
+                          ? 'Finalizar'
+                          : 'Ejercicio completado'),
               ),
             ),
           ),
@@ -591,7 +668,10 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         Text(
           'Has completado tu entrenamiento de hoy.\n'
           'Minutos activos: ${widget.workout.durationMinutes} min · Impacto CF: +${WorkoutSessionService.cfBonus}',
-          style: theme.textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: context.cfTextSecondary,
+            height: 1.4,
+          ),
         ),
         const SizedBox(height: 18),
         Text('Ejercicios', style: theme.textTheme.titleLarge),
@@ -605,11 +685,14 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               final weight = _weightKgByExerciseIndex[index];
               return Container(
                 decoration: BoxDecoration(
-                  color: CFColors.surface,
+                  color: context.cfSurface,
                   borderRadius: const BorderRadius.all(Radius.circular(18)),
-                  border: Border.all(color: CFColors.softGray),
+                  border: Border.all(color: context.cfBorder),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -664,21 +747,58 @@ class _VariantChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: selected
-              ? CFColors.primary.withValues(alpha: 0.14)
-              : CFColors.primary.withValues(alpha: 0.08),
+          color: selected ? context.cfPrimaryTintStrong : context.cfPrimaryTint,
           borderRadius: const BorderRadius.all(Radius.circular(999)),
           border: Border.all(
-            color: selected ? CFColors.primary : CFColors.primary.withValues(alpha: 0.16),
+            color: selected ? context.cfPrimary : context.cfPrimaryTintStrong,
           ),
         ),
         child: Text(
           text,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: CFColors.primary,
-              ),
+            fontWeight: FontWeight.w800,
+            color: context.cfPrimary,
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _SessionStatusBanner extends StatelessWidget {
+  const _SessionStatusBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.cfPrimaryTint,
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        border: Border.all(color: context.cfPrimaryTintStrong),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.info_outline, color: context.cfPrimary, size: 18),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: context.cfTextPrimary,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

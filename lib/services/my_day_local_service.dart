@@ -41,11 +41,7 @@ class MyDayLocalService implements MyDayRepository {
       addedAtMs: now,
     );
 
-    final all = await getAll();
-    final updated = [entry, ...all];
-
-    final p = await _prefs();
-    await p.setString(_kKey, MyDayEntryModel.encodeList(updated));
+    await addEntry(entry);
   }
 
   /// Adds multiple entries in one write (helper for template-to-day save).
@@ -79,18 +75,39 @@ class MyDayLocalService implements MyDayRepository {
     }
     if (newEntries.isEmpty) return;
 
-    final all = await getAll();
-    final updated = [...newEntries, ...all];
-
-    final p = await _prefs();
-    await p.setString(_kKey, MyDayEntryModel.encodeList(updated));
+    await addEntries(newEntries);
   }
 
   @override
   Future<void> remove(String entryId) async {
     final all = await getAll();
     final updated = all.where((e) => e.id != entryId).toList();
+    await replaceAll(updated);
+  }
+
+  Future<void> addEntry(MyDayEntryModel entry) async {
+    final all = await getAll();
+    final updated = <MyDayEntryModel>[
+      entry,
+      ...all.where((item) => item.id != entry.id),
+    ];
+    await replaceAll(updated);
+  }
+
+  Future<void> addEntries(List<MyDayEntryModel> entries) async {
+    if (entries.isEmpty) return;
+    final all = await getAll();
+    final byId = <String, MyDayEntryModel>{
+      for (final entry in all) entry.id: entry,
+      for (final entry in entries) entry.id: entry,
+    };
+    final updated = byId.values.toList()
+      ..sort((a, b) => b.addedAtMs.compareTo(a.addedAtMs));
+    await replaceAll(updated);
+  }
+
+  Future<void> replaceAll(List<MyDayEntryModel> items) async {
     final p = await _prefs();
-    await p.setString(_kKey, MyDayEntryModel.encodeList(updated));
+    await p.setString(_kKey, MyDayEntryModel.encodeList(items));
   }
 }

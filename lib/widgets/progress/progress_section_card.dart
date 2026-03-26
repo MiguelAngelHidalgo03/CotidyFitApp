@@ -20,20 +20,22 @@ class ProgressSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shadow =
+        boxShadow ??
+        [
+          BoxShadow(
+            color: context.cfShadow,
+            blurRadius: context.cfIsDark ? 22 : 16,
+            offset: const Offset(0, 8),
+          ),
+        ];
+
     return Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? CFColors.surface,
+        color: backgroundColor ?? context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(20)),
-        border: Border.all(color: borderColor ?? CFColors.softGray),
-        boxShadow:
-            boxShadow ??
-            [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
+        border: Border.all(color: borderColor ?? context.cfBorder),
+        boxShadow: shadow,
       ),
       padding: padding,
       child: child,

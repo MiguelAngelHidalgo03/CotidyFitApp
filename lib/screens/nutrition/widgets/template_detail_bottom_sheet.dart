@@ -11,6 +11,7 @@ import '../../../services/nutrition_templates_firestore_service.dart';
 import '../../../services/recipe_repository.dart';
 import '../../../services/recipes_repository_factory.dart';
 import '../../../services/template_ingredient_check_local_service.dart';
+import '../../../utils/meal_slot_utils.dart';
 import '../../../widgets/progress/progress_section_card.dart';
 import '../recipe_detail_screen.dart';
 import 'ingredient_check_bottom_sheet.dart';
@@ -71,7 +72,10 @@ class _TemplateDetailBottomSheetState extends State<TemplateDetailBottomSheet> {
 
     final items = [
       for (final e in ingredientLabelByKey.entries)
-        IngredientCheckItem(key: e.key, label: e.value.isEmpty ? e.key : e.value),
+        IngredientCheckItem(
+          key: e.key,
+          label: e.value.isEmpty ? e.key : e.value,
+        ),
     ]..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
 
     return _DetailData(
@@ -83,31 +87,11 @@ class _TemplateDetailBottomSheetState extends State<TemplateDetailBottomSheet> {
   }
 
   String _slotLabel(String slot) {
-    switch (slot.trim().toLowerCase()) {
-      case 'desayuno':
-        return 'Desayuno';
-      case 'comida':
-        return 'Comida';
-      case 'merienda':
-        return 'Merienda';
-      case 'cena':
-        return 'Cena';
-    }
-    return slot;
+    return mealSlotLabel(slot);
   }
 
   MealType? _mealTypeFromSlot(String slot) {
-    switch (slot.trim().toLowerCase()) {
-      case 'desayuno':
-        return MealType.breakfast;
-      case 'comida':
-        return MealType.lunch;
-      case 'merienda':
-        return MealType.snack;
-      case 'cena':
-        return MealType.dinner;
-    }
-    return null;
+    return mealTypeFromMealSlot(slot);
   }
 
   Future<void> _openIngredientsChecklist(_DetailData data) async {
@@ -141,9 +125,7 @@ class _TemplateDetailBottomSheetState extends State<TemplateDetailBottomSheet> {
 
   Future<void> _openRecipe(String recipeId) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RecipeDetailScreen(recipeId: recipeId),
-      ),
+      MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipeId: recipeId)),
     );
     if (!mounted) return;
     setState(() {
@@ -170,7 +152,9 @@ class _TemplateDetailBottomSheetState extends State<TemplateDetailBottomSheet> {
     if (toAdd.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Esta plantilla no tiene recetas asociadas.')),
+        const SnackBar(
+          content: Text('Esta plantilla no tiene recetas asociadas.'),
+        ),
       );
       return;
     }
@@ -178,188 +162,243 @@ class _TemplateDetailBottomSheetState extends State<TemplateDetailBottomSheet> {
     await _myDay.addMany(day: picked, entries: toAdd);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Guardado en “Mi día”.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Guardado en “Mi día”.')));
   }
 
   @override
   Widget build(BuildContext context) {
+    final surfaceColor = context.cfSurface;
+    final softSurfaceColor = context.cfSoftSurface;
+    final borderColor = context.cfBorder;
+
     return DraggableScrollableSheet(
       initialChildSize: 0.86,
       minChildSize: 0.50,
       maxChildSize: 0.95,
       builder: (context, scrollCtrl) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: ListView(
-              controller: scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-              children: [
-                Center(
-                  child: Container(
-                    width: 54,
-                    height: 5,
-                    decoration: const BoxDecoration(
-                      color: CFColors.softGray,
-                      borderRadius: BorderRadius.all(Radius.circular(999)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  widget.template.name,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                if (widget.template.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.template.description,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: CFColors.textSecondary),
-                  ),
-                ],
-                const SizedBox(height: 14),
-
-                ProgressSectionCard(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Resumen nutricional',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyLarge
-                            ?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _Chip(text: '${widget.template.caloriesTotal.round()} kcal'),
-                          _Chip(text: 'P ${widget.template.proteinTotal.round()}g'),
-                          _Chip(text: 'C ${widget.template.carbsTotal.round()}g'),
-                          _Chip(text: 'G ${widget.template.fatsTotal.round()}g'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                FutureBuilder<_DetailData>(
-                  future: _future,
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-
-                    final data = snap.data;
-                    if (data == null) {
-                      return const ProgressSectionCard(
-                        child: Text('No se pudo cargar la plantilla.'),
-                      );
-                    }
-
-                    final bySlot = <String, List<TemplateRecipeLinkModel>>{};
-                    for (final link in data.links) {
-                      bySlot.putIfAbsent(link.mealSlot, () => []).add(link);
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Recetas',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => _openIngredientsChecklist(data),
-                              icon: const Icon(Icons.checklist_outlined),
-                              label: const Text('Ingredientes'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        for (final slot in bySlot.keys) ...[
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-                            child: Text(
-                              _slotLabel(slot),
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ),
-                          for (final link in (bySlot[slot] ?? const [])) ...[
-                            ProgressSectionCard(
-                              padding: const EdgeInsets.all(12),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.restaurant, color: CFColors.primary),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: InkWell(
-                                      onTap: () => _openRecipe(link.recipeId),
-                                      borderRadius: const BorderRadius.all(Radius.circular(8)),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 6),
-                                        child: Text(
-                                          data.recipeById[link.recipeId]?.name ?? 'Receta',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyLarge
-                                              ?.copyWith(fontWeight: FontWeight.w800),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Abrir',
-                                    onPressed: () => _openRecipe(link.recipeId),
-                                    icon: const Icon(Icons.chevron_right),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                        ],
-
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: () => _saveToMyDay(data),
-                            icon: const Icon(Icons.bookmark_add_outlined),
-                            label: const Text('Guardar en mi día'),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+        return Material(
+          color: Colors.transparent,
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: surfaceColor,
+              border: Border.all(color: borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: context.cfShadow,
+                  blurRadius: context.cfIsDark ? 28 : 18,
+                  offset: const Offset(0, 10),
                 ),
               ],
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: ColoredBox(
+                color: surfaceColor,
+                child: ListView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 54,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: borderColor,
+                          borderRadius: BorderRadius.all(Radius.circular(999)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.template.name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: context.cfTextPrimary,
+                      ),
+                    ),
+                    if (widget.template.description.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.template.description,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: context.cfTextSecondary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+
+                    ProgressSectionCard(
+                      padding: const EdgeInsets.all(12),
+                      backgroundColor: softSurfaceColor,
+                      borderColor: borderColor,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resumen nutricional',
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                  color: context.cfTextPrimary,
+                                ),
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _Chip(
+                                text:
+                                    '${widget.template.caloriesTotal.round()} kcal',
+                              ),
+                              _Chip(
+                                text:
+                                    'P ${widget.template.proteinTotal.round()}g',
+                              ),
+                              _Chip(
+                                text:
+                                    'C ${widget.template.carbsTotal.round()}g',
+                              ),
+                              _Chip(
+                                text: 'G ${widget.template.fatsTotal.round()}g',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    FutureBuilder<_DetailData>(
+                      future: _future,
+                      builder: (context, snap) {
+                        if (snap.connectionState == ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        final data = snap.data;
+                        if (data == null) {
+                          return ProgressSectionCard(
+                            backgroundColor: softSurfaceColor,
+                            borderColor: borderColor,
+                            child: Text('No se pudo cargar la plantilla.'),
+                          );
+                        }
+
+                        final bySlot =
+                            <String, List<TemplateRecipeLinkModel>>{};
+                        for (final link in data.links) {
+                          bySlot.putIfAbsent(link.mealSlot, () => []).add(link);
+                        }
+                        final orderedSlots = bySlot.keys.toList()
+                          ..sort(compareMealSlots);
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Recetas',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(fontWeight: FontWeight.w900),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () =>
+                                      _openIngredientsChecklist(data),
+                                  icon: const Icon(Icons.checklist_outlined),
+                                  label: const Text('Ingredientes'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            for (final slot in orderedSlots) ...[
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+                                child: Text(
+                                  _slotLabel(slot),
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                              ),
+                              for (final link
+                                  in (bySlot[slot] ?? const [])) ...[
+                                ProgressSectionCard(
+                                  padding: const EdgeInsets.all(12),
+                                  backgroundColor: softSurfaceColor,
+                                  borderColor: borderColor,
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.restaurant,
+                                        color: CFColors.primary,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: InkWell(
+                                          onTap: () =>
+                                              _openRecipe(link.recipeId),
+                                          borderRadius: const BorderRadius.all(
+                                            Radius.circular(8),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 6,
+                                            ),
+                                            child: Text(
+                                              data
+                                                      .recipeById[link.recipeId]
+                                                      ?.name ??
+                                                  'Receta',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyLarge
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Abrir',
+                                        onPressed: () =>
+                                            _openRecipe(link.recipeId),
+                                        icon: const Icon(Icons.chevron_right),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                            ],
+
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () => _saveToMyDay(data),
+                                icon: const Icon(Icons.bookmark_add_outlined),
+                                label: const Text('Guardar en mi día'),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -392,16 +431,15 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .bodyMedium
-            ?.copyWith(color: CFColors.textPrimary),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: context.cfTextPrimary),
       ),
     );
   }

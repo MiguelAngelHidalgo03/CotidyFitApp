@@ -5,9 +5,14 @@ import '../../services/achievements_service.dart';
 import 'progress_section_card.dart';
 
 class ProgressAchievementsCard extends StatelessWidget {
-  const ProgressAchievementsCard({super.key, required this.items});
+  const ProgressAchievementsCard({
+    super.key,
+    required this.items,
+    this.emptyMessage,
+  });
 
   final List<AchievementViewItem> items;
+  final String? emptyMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +29,7 @@ class ProgressAchievementsCard extends StatelessWidget {
           const SizedBox(height: 10),
           if (items.isEmpty)
             Text(
-              'No hay logros configurados todavía.',
+              emptyMessage ?? 'No hay logros configurados todavía.',
               style: Theme.of(context).textTheme.bodyMedium,
             )
           else
@@ -123,6 +128,18 @@ class _AchievementRow extends StatelessWidget {
         return Icons.military_tech_outlined;
       case 'event_available_outlined':
         return Icons.event_available_outlined;
+      case 'directions_walk_outlined':
+        return Icons.directions_walk_outlined;
+      case 'timer_outlined':
+        return Icons.timer_outlined;
+      case 'restaurant_outlined':
+        return Icons.restaurant_outlined;
+      case 'emoji_emotions_outlined':
+        return Icons.emoji_emotions_outlined;
+      case 'auto_graph_outlined':
+        return Icons.auto_graph_outlined;
+      case 'monitor_weight_outlined':
+        return Icons.monitor_weight_outlined;
       default:
         return Icons.emoji_events_outlined;
     }

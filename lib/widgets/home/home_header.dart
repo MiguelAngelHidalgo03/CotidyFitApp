@@ -15,6 +15,7 @@ class HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     final now = DateTime.now();
     final greeting = _greetingForHour(now.hour);
     final dateLabel = _formatSpanishDate(now);
@@ -23,12 +24,13 @@ class HomeHeader extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(22)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -37,9 +39,9 @@ class HomeHeader extends StatelessWidget {
                 Text(
                   greeting,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(dateLabel, style: Theme.of(context).textTheme.bodyMedium),
@@ -48,37 +50,48 @@ class HomeHeader extends StatelessWidget {
                   Text(
                     'Aún estás a tiempo de sumar hoy.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: CFColors.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: context.cfTextSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 _StreakPill(streakCount: streakCount),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: const BorderRadius.all(Radius.circular(999)),
                   child: LinearProgressIndicator(
                     value: streakProgress,
                     minHeight: 8,
-                    backgroundColor: CFColors.softGray,
-                    valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                    backgroundColor: context.cfBorder,
+                    valueColor: AlwaysStoppedAnimation(primary),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'Índice CF',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 8),
-              CfRingIndicator(value: cfIndex, size: 72),
-            ],
+          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            decoration: BoxDecoration(
+              color: context.cfMutedSurface,
+              borderRadius: const BorderRadius.all(Radius.circular(18)),
+              border: Border.all(color: context.cfBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Índice CF',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.cfTextSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                CfRingIndicator(value: cfIndex, size: 72),
+              ],
+            ),
           ),
         ],
       ),
@@ -108,15 +121,7 @@ class HomeHeader extends StatelessWidget {
       'dic',
     ];
 
-    const weekdays = <String>[
-      'lun',
-      'mar',
-      'mié',
-      'jue',
-      'vie',
-      'sáb',
-      'dom',
-    ];
+    const weekdays = <String>['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 
     final wd = weekdays[(dt.weekday - 1).clamp(0, 6)];
     final m = months[(dt.month - 1).clamp(0, 11)];
@@ -131,30 +136,28 @@ class _StreakPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.primary.withValues(alpha: 0.08),
+        color: context.cfPrimaryTint,
         borderRadius: const BorderRadius.all(Radius.circular(999)),
-        border: Border.all(color: CFColors.primary.withValues(alpha: 0.16)),
+        border: Border.all(color: context.cfPrimaryTintStrong),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.local_fire_department, color: CFColors.primary, size: 18),
+          Icon(Icons.local_fire_department, color: primary, size: 18),
           const SizedBox(width: 8),
           Text(
             'Racha: $streakCount',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: CFColors.textPrimary,
-                ),
+              fontWeight: FontWeight.w700,
+              color: context.cfTextPrimary,
+            ),
           ),
           const SizedBox(width: 6),
-          Text(
-            'días',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
+          Text('días', style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
     );

@@ -6,7 +6,9 @@ import '../models/user_profile.dart';
 import '../models/workout.dart';
 import '../services/profile_service.dart';
 import '../services/training_recommendation_service.dart';
+import '../services/women_cycle_service.dart';
 import '../services/workout_service.dart';
+import '../widgets/common/inline_status_banner.dart';
 import '../widgets/progress/progress_section_card.dart';
 import 'workout_detail_screen.dart';
 
@@ -20,6 +22,7 @@ class ExploreWorkoutsScreen extends StatefulWidget {
 class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
   final _service = WorkoutService();
   final _profileService = ProfileService();
+  final _cycleService = WomenCycleService();
 
   final Set<WorkoutPlace> _places = {};
   final Set<WorkoutGoal> _goals = {};
@@ -29,8 +32,10 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
 
   bool _loading = true;
   String? _error;
+  String? _statusMessage;
   List<Workout> _all = const [];
   UserProfile? _profile;
+  bool _prioritizePeriodWorkouts = false;
 
   @override
   void initState() {
@@ -42,20 +47,38 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _statusMessage = null;
     });
     try {
-      final workouts = await _service.refreshFromFirestore();
+      await _service.ensureLoaded();
+      final cachedWorkouts = _service.getAllWorkouts();
       final profile = await _profileService.getProfile();
+      final cycle = await _cycleService.getCurrentCycle();
+      if (!mounted) return;
+      setState(() {
+        _all = cachedWorkouts;
+        _profile = profile;
+        _prioritizePeriodWorkouts =
+            profile?.sex == UserSex.mujer && (cycle?.includes(DateTime.now()) ?? false);
+        _loading = false;
+      });
+
+      final workouts = await _service.refreshFromFirestore();
       if (!mounted) return;
       setState(() {
         _all = workouts;
-        _profile = profile;
+        _statusMessage = _service.lastRefreshSucceeded
+            ? null
+            : workouts.isNotEmpty
+            ? 'No se detecta una fuente de internet. Mostrando rutinas guardadas en este dispositivo.'
+            : 'No se detecta una fuente de internet y todavía no hay rutinas guardadas.';
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Error al cargar rutinas: $e');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      setState(() {
+        _error = 'Error al cargar rutinas: $e';
+        _loading = false;
+      });
     }
   }
 
@@ -66,6 +89,7 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
   }
 
   Widget _workoutCard(({Workout workout, dynamic rec}) entry) {
+    final category = entry.workout.category.trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Card(
@@ -80,11 +104,35 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        entry.workout.name,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.w900,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.workout.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
+                          ),
+                          if (category.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              category,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.copyWith(
+                                color: CFColors.textSecondary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -162,6 +210,7 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
             rec: TrainingRecommendationService.scoreWorkout(
               profile: _profile,
               workout: w,
+              isPeriodActive: _prioritizePeriodWorkouts,
             ),
           ),
         )
@@ -176,6 +225,26 @@ class _ExploreWorkoutsScreenState extends State<ExploreWorkoutsScreen> {
           padding: const EdgeInsets.all(20),
           child: ListView(
             children: [
+              if (_statusMessage != null) ...[
+                InlineStatusBanner(message: _statusMessage!),
+                const SizedBox(height: 12),
+              ],
+              if (_prioritizePeriodWorkouts) ...[
+                const ProgressSectionCard(
+                  child: Row(
+                    children: [
+                      Icon(Icons.favorite_border),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Estamos priorizando rutinas marcadas para aliviar o acompañar mejor los días de regla.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               if (recommended.isNotEmpty) ...[
                 Text(
                   'Recomendado para ti',

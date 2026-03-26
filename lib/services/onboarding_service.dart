@@ -3,7 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 
 import '../models/user_profile.dart';
 import 'auth_service.dart';
+import 'connectivity_service.dart';
 import 'firestore_service.dart';
+import 'offline_sync_queue_service.dart';
 import 'profile_service.dart';
 
 class OnboardingService {
@@ -15,9 +17,9 @@ class OnboardingService {
     ProfileService? profile,
     AuthService? auth,
     FirestoreService? firestore,
-  })  : _profile = profile ?? ProfileService(),
-        _auth = auth,
-        _firestore = firestore;
+  }) : _profile = profile ?? ProfileService(),
+       _auth = auth,
+       _firestore = firestore;
 
   AuthService? _authOrNull() {
     if (Firebase.apps.isEmpty) return null;
@@ -48,11 +50,24 @@ class OnboardingService {
     if (fs == null) return;
 
     final local = await getOrCreateLocalProfile();
-    await fs.upsertUser(
-      uid: user.uid,
-      email: user.email,
-      profile: local,
-    );
+    if (!ConnectivityService.instance.isOnline) {
+      await OfflineSyncQueueService.instance.queueProfileUpsert(
+        uid: user.uid,
+        email: user.email,
+        profile: local,
+      );
+      return;
+    }
+
+    try {
+      await fs.upsertUser(uid: user.uid, email: user.email, profile: local);
+    } catch (_) {
+      await OfflineSyncQueueService.instance.queueProfileUpsert(
+        uid: user.uid,
+        email: user.email,
+        profile: local,
+      );
+    }
   }
 
   Future<void> syncProfileToFirestore(UserProfile profile) async {
@@ -65,15 +80,30 @@ class OnboardingService {
     final fs = _firestoreOrNull();
     if (fs == null) return;
 
-    await fs.upsertUser(
-      uid: user.uid,
-      email: user.email,
-      profile: profile,
-    );
+    if (!ConnectivityService.instance.isOnline) {
+      await OfflineSyncQueueService.instance.queueProfileUpsert(
+        uid: user.uid,
+        email: user.email,
+        profile: profile,
+      );
+      return;
+    }
+
+    try {
+      await fs.upsertUser(uid: user.uid, email: user.email, profile: profile);
+    } catch (_) {
+      await OfflineSyncQueueService.instance.queueProfileUpsert(
+        uid: user.uid,
+        email: user.email,
+        profile: profile,
+      );
+    }
   }
 
   Future<void> completeOnboarding(UserProfile profile) async {
-    final completed = profile.onboardingCompleted ? profile : profile.copyWith(onboardingCompleted: true);
+    final completed = profile.onboardingCompleted
+        ? profile
+        : profile.copyWith(onboardingCompleted: true);
     await saveLocalProfile(completed);
     await syncProfileToFirestore(completed);
   }
@@ -83,6 +113,23 @@ class OnboardingService {
     final fs = _firestoreOrNull();
     if (fs == null) return;
     final local = await getOrCreateLocalProfile();
-    await fs.upsertUser(uid: user.uid, email: user.email, profile: local);
+    if (!ConnectivityService.instance.isOnline) {
+      await OfflineSyncQueueService.instance.queueProfileUpsert(
+        uid: user.uid,
+        email: user.email,
+        profile: local,
+      );
+      return;
+    }
+
+    try {
+      await fs.upsertUser(uid: user.uid, email: user.email, profile: local);
+    } catch (_) {
+      await OfflineSyncQueueService.instance.queueProfileUpsert(
+        uid: user.uid,
+        email: user.email,
+        profile: local,
+      );
+    }
   }
 }

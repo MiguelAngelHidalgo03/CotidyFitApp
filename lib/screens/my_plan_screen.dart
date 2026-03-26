@@ -8,6 +8,7 @@ import '../services/workout_history_service.dart';
 import '../services/workout_plan_service.dart';
 import '../services/workout_service.dart';
 import '../utils/date_utils.dart';
+import '../widgets/common/inline_status_banner.dart';
 import '../widgets/progress/progress_section_card.dart';
 import 'workout_detail_screen.dart';
 
@@ -28,6 +29,7 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
   List<Workout> _allWorkouts = const [];
   Map<String, String> _completedByDate = const {};
   bool _loading = true;
+  String? _statusMessage;
 
   @override
   void initState() {
@@ -38,15 +40,30 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final workouts = await _workouts.refreshFromFirestore();
-    final plan = await _plans.getPlanForWeekKey(DateUtilsCF.toKey(_weekStart));
-    final completed = await _history.getCompletedWorkoutsByDate();
+    await _workouts.ensureLoaded();
+    final cachedWorkouts = _workouts.getAllWorkouts();
+    final results = await Future.wait([
+      _plans.getPlanForWeekKey(DateUtilsCF.toKey(_weekStart)),
+      _history.getCompletedWorkoutsByDate(),
+    ]);
     if (!mounted) return;
     setState(() {
-      _plan = plan;
-      _allWorkouts = workouts;
-      _completedByDate = completed;
+      _plan = results[0] as WeekPlan?;
+      _allWorkouts = cachedWorkouts;
+      _completedByDate = results[1] as Map<String, String>;
       _loading = false;
+      _statusMessage = null;
+    });
+
+    final workouts = await _workouts.refreshFromFirestore();
+    if (!mounted) return;
+    setState(() {
+      _allWorkouts = workouts;
+      _statusMessage = _workouts.lastRefreshSucceeded
+          ? null
+          : workouts.isNotEmpty
+          ? 'No se detecta una fuente de internet. Mostrando tus rutinas guardadas.'
+          : 'No se detecta una fuente de internet y no hay rutinas guardadas todavía.';
     });
   }
 
@@ -116,6 +133,10 @@ class _MyPlanScreenState extends State<MyPlanScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
+                    if (_statusMessage != null) ...[
+                      InlineStatusBanner(message: _statusMessage!),
+                      const SizedBox(height: 12),
+                    ],
                     _WeekHeader(
                       weekStart: _weekStart,
                       onPrev: _prevWeek,
@@ -229,6 +250,8 @@ class _DayPlanRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = _weekdayLabel(dayIndex);
+    final badgeColor = context.cfSoftSurface;
+    final badgeBorderColor = context.cfBorder;
 
     return ProgressSectionCard(
       padding: const EdgeInsets.all(14),
@@ -238,16 +261,16 @@ class _DayPlanRow extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: CFColors.background,
+              color: badgeColor,
               borderRadius: const BorderRadius.all(Radius.circular(18)),
-              border: Border.all(color: CFColors.softGray),
+              border: Border.all(color: badgeBorderColor),
             ),
             child: Center(
               child: Text(
                 label,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   fontWeight: FontWeight.w900,
-                  color: CFColors.textPrimary,
+                  color: context.cfTextPrimary,
                 ),
               ),
             ),
@@ -563,9 +586,9 @@ class _WorkoutPill extends StatelessWidget {
         width: 220,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: CFColors.background,
+          color: context.cfSoftSurface,
           borderRadius: const BorderRadius.all(Radius.circular(18)),
-          border: Border.all(color: CFColors.softGray),
+          border: Border.all(color: context.cfBorder),
           boxShadow: const [],
         ),
         child: Column(
@@ -582,7 +605,9 @@ class _WorkoutPill extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '${workout.durationMinutes} min · ${workout.level}',
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: context.cfTextSecondary),
             ),
           ],
         ),

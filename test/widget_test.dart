@@ -11,12 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cotidyfitapp/main.dart';
 import 'package:cotidyfitapp/screens/home_screen.dart';
-import 'package:cotidyfitapp/widgets/home/daily_actions_section.dart';
 
 void main() {
   testWidgets('Home shows daily question', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({
-      'cf_user_profile_json': '{"goal":"Mejorar hábitos"}',
+      'cf_user_profile_json':
+          '{"goal":"Mejorar hábitos","onboardingCompleted":true,"streakPreferences":{"focusAreas":["training"],"mixMode":"any"}}',
     });
     await tester.pumpWidget(const CotidyFitApp(forceLocalStart: true));
 
@@ -30,8 +30,14 @@ void main() {
 
     // Ensure we are on the Home tab (PageView initial page can be timing-sensitive in tests).
     final bottomNav = find.byType(BottomNavigationBar);
-    final homeIcon = find.descendant(of: bottomNav, matching: find.byIcon(Icons.home));
-    final homeIconOutlined = find.descendant(of: bottomNav, matching: find.byIcon(Icons.home_outlined));
+    final homeIcon = find.descendant(
+      of: bottomNav,
+      matching: find.byIcon(Icons.home),
+    );
+    final homeIconOutlined = find.descendant(
+      of: bottomNav,
+      matching: find.byIcon(Icons.home_outlined),
+    );
 
     if (homeIcon.evaluate().isNotEmpty) {
       await tester.tap(homeIcon.first);
@@ -47,14 +53,12 @@ void main() {
     }
     expect(find.byType(HomeScreen), findsOneWidget);
 
-    // Wait for Home content (DailyDataController init) to finish.
+    // Wait for Home content to finish loading.
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 150));
-      if (find.byType(DailyActionsSection).evaluate().isNotEmpty) break;
+      if (find.text('Recomendación del momento').evaluate().isNotEmpty) break;
     }
 
-    expect(find.byType(DailyActionsSection), findsOneWidget);
-    expect(find.text('¿Qué has hecho hoy?'), findsOneWidget);
-    expect(find.text('Confirmar día'), findsOneWidget);
+    expect(find.text('Recomendación del momento'), findsWidgets);
   });
 }

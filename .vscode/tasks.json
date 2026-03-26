@@ -4,7 +4,7 @@
 		{
 			"label": "Deploy Firebase (rules + functions)",
 			"type": "shell",
-			"command": "cd functions; npm install; npm run build; cd ..; firebase deploy --only firestore:rules,functions",
+			"command": "cd functions; npm install; npm run build; cd ..; firebase deploy --only functions; firebase deploy --only firestore:rules",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"

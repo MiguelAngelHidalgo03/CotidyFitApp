@@ -33,11 +33,20 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onUserTaskReminderChanged = exports.seedAchievementsCatalog = exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onMessageCreated = exports.deleteChatCascade = void 0;
+exports.onWeeklyChallengeProgressWrite = exports.seedWeeklyChallengesHttp = exports.seedWeeklyChallenges = exports.onUserTaskReminderChanged = exports.seedAchievementsCatalog = exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onReportCreated = exports.onCommunityGroupMessageCreated = exports.onMessageCreated = exports.deleteMyAccount = exports.deleteSuggestionAdmin = exports.submitSuggestion = exports.deleteChatCascade = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 if (admin.apps.length === 0) {
     admin.initializeApp();
+}
+const ADMIN_EMAIL_ALLOWLIST = new Set(['cotidyfit@gmail.com']);
+async function isAdminUser(uid, email) {
+    const normalizedEmail = (email ?? '').trim().toLowerCase();
+    if (ADMIN_EMAIL_ALLOWLIST.has(normalizedEmail)) {
+        return true;
+    }
+    const adminSnap = await admin.firestore().collection('admin_users').doc(uid).get();
+    return adminSnap.exists;
 }
 function chunk(items, size) {
     if (size <= 0)
@@ -52,6 +61,24 @@ function isInvalidTokenError(code) {
     return (code === 'messaging/registration-token-not-registered' ||
         code === 'messaging/invalid-registration-token' ||
         code === 'messaging/invalid-argument');
+}
+function _str(v) {
+    if (typeof v === 'string')
+        return v.trim();
+    if (v === null || v === undefined)
+        return '';
+    return v.toString().trim();
+}
+function normalizeDeleteAccountConfirmation(value) {
+    return value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z]/g, '');
+}
+function isValidDeleteAccountConfirmation(value) {
+    const normalized = normalizeDeleteAccountConfirmation(value);
+    return normalized === 'eliminar' || normalized === 'eliminarcuenta';
 }
 async function deleteMessagesInBatches(chatId) {
     const db = admin.firestore();
@@ -70,6 +97,21 @@ async function deleteMessagesInBatches(chatId) {
             batch.delete(doc.ref);
         await batch.commit();
         total += qs.size;
+    }
+    return total;
+}
+async function deleteDocRefsInBatches(refs) {
+    if (refs.length === 0)
+        return 0;
+    const db = admin.firestore();
+    let total = 0;
+    // Keep batch size well under 500.
+    for (const group of chunk(refs, 400)) {
+        const batch = db.batch();
+        for (const ref of group)
+            batch.delete(ref);
+        await batch.commit();
+        total += group.length;
     }
     return total;
 }
@@ -115,6 +157,194 @@ exports.deleteChatCascade = functions.https.onCall(async (data, context) => {
         createdAt: chatData.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: false });
     return { ok: true, deletedMessages, deletedChat: true, mode };
+});
+exports.submitSuggestion = functions.https.onCall(async (data, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    }
+    const topic = _str(data?.topic);
+    const message = _str(data?.message);
+    const name = _str(data?.name);
+    const providedEmail = _str(data?.email);
+    const emailFromToken = _str(context.auth?.token?.email);
+    const email = providedEmail || emailFromToken;
+    if (!topic) {
+        throw new functions.https.HttpsError('invalid-argument', 'topic is required');
+    }
+    if (!message) {
+        throw new functions.https.HttpsError('invalid-argument', 'message is required');
+    }
+    if (topic.length > 80) {
+        throw new functions.https.HttpsError('invalid-argument', 'topic is too long');
+    }
+    if (message.length > 4000) {
+        throw new functions.https.HttpsError('invalid-argument', 'message is too long');
+    }
+    const db = admin.firestore();
+    const ref = await db.collection('suggestions').add({
+        uid,
+        topic,
+        message,
+        name: name || null,
+        email: email || null,
+        source: 'app',
+        status: 'new',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { ok: true, id: ref.id };
+});
+exports.deleteSuggestionAdmin = functions.https.onCall(async (data, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    }
+    const db = admin.firestore();
+    const isAdmin = await isAdminUser(uid, context.auth?.token?.email);
+    if (!isAdmin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+    const suggestionId = _str(data?.suggestionId);
+    if (!suggestionId) {
+        throw new functions.https.HttpsError('invalid-argument', 'suggestionId is required');
+    }
+    await db.collection('suggestions').doc(suggestionId).delete();
+    return { ok: true, id: suggestionId };
+});
+exports.deleteMyAccount = functions
+    .runWith({ timeoutSeconds: 540, memory: '1GB' })
+    .https.onCall(async (data, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    }
+    const confirm = (data?.confirm ?? '').toString();
+    if (!isValidDeleteAccountConfirmation(confirm)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Confirmación inválida');
+    }
+    const db = admin.firestore();
+    // 1) Remove social graph (prevents chat recreation).
+    try {
+        const [friendshipsSnap, requestsSnap] = await Promise.all([
+            db.collection('friendships').where('uids', 'array-contains', uid).get(),
+            db.collection('friend_requests').where('uids', 'array-contains', uid).get(),
+        ]);
+        await deleteDocRefsInBatches(friendshipsSnap.docs.map((d) => d.ref));
+        await deleteDocRefsInBatches(requestsSnap.docs.map((d) => d.ref));
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete friendships/requests', e);
+    }
+    // 2) Purge DM chats + messages for both sides.
+    try {
+        const chatsSnap = await db.collection('chats').where('members', 'array-contains', uid).get();
+        for (const doc of chatsSnap.docs) {
+            const chatId = doc.id;
+            try {
+                await deleteMessagesInBatches(chatId);
+            }
+            catch (e) {
+                functions.logger.warn(`Failed to delete messages for chat ${chatId}`, e);
+            }
+            try {
+                await doc.ref.delete();
+            }
+            catch (e) {
+                functions.logger.warn(`Failed to delete chat doc ${chatId}`, e);
+            }
+        }
+    }
+    catch (e) {
+        functions.logger.warn('Failed to purge DM chats', e);
+    }
+    // 3) Remove from community groups (membership docs are under communityGroups/*/members/{uid}).
+    try {
+        const memberSnap = await db
+            .collectionGroup('members')
+            .where(admin.firestore.FieldPath.documentId(), '==', uid)
+            .get();
+        await deleteDocRefsInBatches(memberSnap.docs.map((d) => d.ref));
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete community memberships', e);
+    }
+    // 4) Delete user identity/public docs.
+    try {
+        await Promise.allSettled([
+            db.collection('user_public').doc(uid).delete(),
+            db.collection('user_blocks').doc(uid).delete(),
+            db.collection('reportCounters').doc(uid).delete(),
+            db.collection('admin_users').doc(uid).delete(),
+        ]);
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete public/block/admin docs', e);
+    }
+    // 5) Delete tag reservation docs.
+    try {
+        const tagsSnap = await db.collection('user_tags').where('uid', '==', uid).get();
+        await deleteDocRefsInBatches(tagsSnap.docs.map((d) => d.ref));
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete user_tags docs', e);
+    }
+    // 6) Delete legacy mutedChats docs.
+    try {
+        const mutedSnap = await db.collection('mutedChats').where('uid', '==', uid).get();
+        await deleteDocRefsInBatches(mutedSnap.docs.map((d) => d.ref));
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete mutedChats docs', e);
+    }
+    // 6b) Delete user suggestions.
+    try {
+        const suggestionsSnap = await db.collection('suggestions').where('uid', '==', uid).get();
+        await deleteDocRefsInBatches(suggestionsSnap.docs.map((d) => d.ref));
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete suggestions docs', e);
+    }
+    // 7) Delete likes/ratings keyed by user_id.
+    try {
+        const [tl, tr, rl, rr] = await Promise.all([
+            db.collection('template_likes').where('user_id', '==', uid).get(),
+            db.collection('template_ratings').where('user_id', '==', uid).get(),
+            db.collection('recipe_likes').where('user_id', '==', uid).get(),
+            db.collection('recipe_ratings').where('user_id', '==', uid).get(),
+        ]);
+        await deleteDocRefsInBatches(tl.docs.map((d) => d.ref));
+        await deleteDocRefsInBatches(tr.docs.map((d) => d.ref));
+        await deleteDocRefsInBatches(rl.docs.map((d) => d.ref));
+        await deleteDocRefsInBatches(rr.docs.map((d) => d.ref));
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete likes/ratings docs', e);
+    }
+    // 8) Recursively delete the private user document (includes all subcollections).
+    try {
+        const userRef = db.collection('users').doc(uid);
+        const recursiveDelete = db.recursiveDelete;
+        if (typeof recursiveDelete === 'function') {
+            await recursiveDelete(userRef);
+        }
+        else {
+            // Fallback: delete the root doc only.
+            // (Subcollections won't be deleted without recursiveDelete.)
+            await userRef.delete();
+        }
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete users/{uid} doc', e);
+    }
+    // 9) Delete Firebase Auth user.
+    try {
+        await admin.auth().deleteUser(uid);
+    }
+    catch (e) {
+        functions.logger.warn('Failed to delete auth user', e);
+    }
+    return { ok: true };
 });
 exports.onMessageCreated = functions.firestore
     .document('chats/{chatId}/messages/{messageId}')
@@ -261,6 +491,153 @@ exports.onMessageCreated = functions.firestore
         functions.logger.info(`Cleaning up ${invalidRefs.length} invalid FCM tokens`);
         await Promise.allSettled(invalidRefs.map((r) => r.delete()));
     }
+});
+exports.onCommunityGroupMessageCreated = functions.firestore
+    .document('communityGroups/{groupId}/messages/{messageId}')
+    .onCreate(async (snap, context) => {
+    const groupId = context.params.groupId;
+    const message = snap.data();
+    const db = admin.firestore();
+    const groupRef = db.collection('communityGroups').doc(groupId);
+    let groupTitle = 'Comunidad';
+    try {
+        const groupSnap = await groupRef.get();
+        const rawTitle = groupSnap.get('title') ?? '';
+        if (typeof rawTitle === 'string' && rawTitle.trim().length > 0) {
+            groupTitle = rawTitle.trim();
+        }
+    }
+    catch (_) {
+        // best-effort
+    }
+    const senderUid = (message.senderUid ?? '').trim();
+    const senderName = (message.senderName ?? 'CotidyFit').toString().trim();
+    const messageType = (message.type ?? 'text').toString().trim() || 'text';
+    const text = (message.text ?? '').trim();
+    const baseBody = messageType !== 'text'
+        ? 'Nuevo mensaje'
+        : text.length === 0
+            ? 'Nuevo mensaje'
+            : text.length > 120
+                ? `${text.substring(0, 117)}...`
+                : text;
+    const body = senderName.length > 0 ? `${senderName}: ${baseBody}` : baseBody;
+    // 0) Ensure group-level last message fields are always up to date.
+    //    Used by the client to sort and preview groups.
+    try {
+        await groupRef.set({
+            lastMessage: {
+                senderUid,
+                senderName,
+                type: messageType,
+                text,
+                createdAtMs: Date.now(),
+            },
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            lastMessageSender: senderUid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    }
+    catch (e) {
+        functions.logger.warn('Failed to update community group lastMessage fields', e);
+    }
+    // 1) Recipients: approved members in communityGroups/{groupId}/members.
+    //    Membership is admin-managed. Doc id = uid.
+    let memberUids = [];
+    try {
+        const qs = await groupRef.collection('members').where('status', '==', 'approved').get();
+        memberUids = qs.docs
+            .map((d) => d.id)
+            .map((u) => u.trim())
+            .filter((u) => u.length > 0);
+    }
+    catch (e) {
+        functions.logger.warn('Failed to load community group members', e);
+        return;
+    }
+    const recipients = senderUid.length > 0 ? memberUids.filter((u) => u !== senderUid) : memberUids;
+    if (recipients.length === 0)
+        return;
+    // 2) Per-user mute (stored at users/{uid}/mutedCommunityGroups/{groupId}.muteUntil)
+    const nowMs = Date.now();
+    const muteSnaps = await Promise.all(recipients.map((uid) => db.collection('users').doc(uid).collection('mutedCommunityGroups').doc(groupId).get()));
+    const recipientsForNotif = [];
+    for (let i = 0; i < recipients.length; i += 1) {
+        const uid = recipients[i];
+        const s = muteSnaps[i];
+        const muteUntil = s.exists ? s.get('muteUntil') : undefined;
+        const muteUntilMs = muteUntil?.toMillis?.();
+        if (muteUntilMs && muteUntilMs > nowMs)
+            continue;
+        recipientsForNotif.push(uid);
+    }
+    if (recipientsForNotif.length === 0)
+        return;
+    const tokenSnaps = await Promise.all(recipientsForNotif.map((uid) => db.collection('users').doc(uid).collection('tokens').get()));
+    const tokenToRef = new Map();
+    for (const qs of tokenSnaps) {
+        for (const doc of qs.docs) {
+            const raw = doc.get('token') ?? doc.id;
+            const token = raw.trim();
+            if (token.length > 0)
+                tokenToRef.set(token, doc.ref);
+        }
+    }
+    const tokens = [...tokenToRef.keys()];
+    if (tokens.length === 0)
+        return;
+    const batches = chunk(tokens, 500);
+    const invalidRefs = [];
+    for (const batch of batches) {
+        const resp = await admin.messaging().sendEachForMulticast({
+            tokens: batch,
+            notification: {
+                title: groupTitle,
+                body,
+            },
+            data: {
+                groupId,
+                kind: 'communityGroup',
+                type: messageType,
+            },
+        });
+        resp.responses.forEach((r, i) => {
+            if (r.success)
+                return;
+            const code = r.error?.code;
+            if (!isInvalidTokenError(code))
+                return;
+            const t = batch[i];
+            const ref = tokenToRef.get(t);
+            if (ref)
+                invalidRefs.push(ref);
+        });
+    }
+    if (invalidRefs.length > 0) {
+        functions.logger.info(`Cleaning up ${invalidRefs.length} invalid FCM tokens (community group)`);
+        await Promise.allSettled(invalidRefs.map((r) => r.delete()));
+    }
+});
+exports.onReportCreated = functions.firestore
+    .document('reports/{reportId}')
+    .onCreate(async (snap) => {
+    const report = snap.data();
+    const reportedUserId = (report?.reportedUserId ?? '').toString().trim();
+    const kind = (report?.kind ?? 'dm').toString().trim() || 'dm';
+    // Only track DM reports for now.
+    if (kind !== 'dm')
+        return;
+    if (reportedUserId.length === 0)
+        return;
+    const db = admin.firestore();
+    const ref = db.collection('reportCounters').doc(reportedUserId);
+    await ref.set({
+        uid: reportedUserId,
+        totalCount: admin.firestore.FieldValue.increment(1),
+        dmCount: admin.firestore.FieldValue.increment(1),
+        lastReportAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
 });
 exports.onTemplateLikeWrite = functions.firestore
     .document('template_likes/{likeId}')
@@ -807,7 +1184,10 @@ exports.onUserTaskReminderChanged = functions.firestore
     const due = afterDue?.toDate?.();
     const dueText = due
         ? `${String(due.getDate()).padStart(2, '0')}/${String(due.getMonth() + 1).padStart(2, '0')}`
-        : 'hoy';
+        : '';
+    const body = dueText
+        ? `Recordatorio activado · Te avisaremos el ${dueText}.`
+        : 'Recordatorio activado en CotidyFit.';
     const tokensSnap = await admin
         .firestore()
         .collection('users')
@@ -822,8 +1202,13 @@ exports.onUserTaskReminderChanged = functions.firestore
     const result = await admin.messaging().sendEachForMulticast({
         tokens,
         notification: {
-            title: 'Recordatorio de tarea',
-            body: `${title} · ${dueText}`,
+            title,
+            body,
+        },
+        android: {
+            notification: {
+                channelId: 'task_reminders',
+            },
         },
         data: {
             type: 'task_reminder',
@@ -845,4 +1230,217 @@ exports.onUserTaskReminderChanged = functions.firestore
         }
         await batch.commit();
     }
+});
+exports.seedWeeklyChallenges = functions.https.onCall(async (_data, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    }
+    const isAdmin = await isAdminUser(uid, context.auth?.token?.email);
+    if (!isAdmin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin privileges required');
+    }
+    const challenges = weeklyChallengesSeedData();
+    const db = admin.firestore();
+    const batch = db.batch();
+    for (const challenge of challenges) {
+        const ref = db.collection('weeklyChallenges').doc(challenge.id);
+        batch.set(ref, {
+            ...challenge,
+            active: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    }
+    await batch.commit();
+    return { ok: true, seeded: challenges.length };
+});
+function weeklyChallengesSeedData() {
+    // Source: admin_panel/retos_semanales.txt
+    return [
+        {
+            id: 'weekly_steps_45k',
+            order: 1,
+            title: '45k pasos en 7 días',
+            description: 'Acumula 45.000 pasos esta semana.',
+            targetType: 'steps',
+            targetValue: 45000,
+            rewardCFBonus: 12,
+        },
+        {
+            id: 'weekly_hydration_14l',
+            order: 2,
+            title: '14L de hidratación',
+            description: 'Llega a 14 litros de agua durante la semana.',
+            targetType: 'waterMl',
+            targetValue: 14000,
+            rewardCFBonus: 10,
+        },
+        {
+            id: 'weekly_habits_18',
+            order: 3,
+            title: '18 hábitos completados',
+            description: 'Completa al menos 18 hábitos en total.',
+            targetType: 'habitsCompleted',
+            targetValue: 18,
+            rewardCFBonus: 14,
+        },
+        {
+            id: 'weekly_workouts_5',
+            order: 4,
+            title: '5 entrenamientos',
+            description: 'Marca 5 entrenamientos completados en la semana.',
+            targetType: 'workouts',
+            targetValue: 5,
+            rewardCFBonus: 15,
+        },
+        {
+            id: 'weekly_consistency_7',
+            order: 5,
+            title: 'Semana consistente',
+            description: 'Registra actividad útil los 7 días de la semana.',
+            targetType: 'activeDays',
+            targetValue: 7,
+            rewardCFBonus: 18,
+        },
+    ];
+}
+// ── Seed weekly challenges (temporary utility) ───────────────────────
+exports.seedWeeklyChallengesHttp = functions.https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.status(405).json({ ok: false, error: 'Use POST' });
+        return;
+    }
+    const key = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
+    const expected = (process.env.SEED_KEY ?? 'cotidyfit-seed-2026').trim();
+    if (key !== expected) {
+        res.status(401).json({ ok: false, error: 'Unauthorized' });
+        return;
+    }
+    const challenges = weeklyChallengesSeedData();
+    const db = admin.firestore();
+    const batch = db.batch();
+    for (const challenge of challenges) {
+        const ref = db.collection('weeklyChallenges').doc(challenge.id);
+        batch.set(ref, {
+            ...challenge,
+            active: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    }
+    await batch.commit();
+    res.status(200).json({ ok: true, seeded: challenges.length });
+});
+function asString(value) {
+    if (value == null)
+        return '';
+    return value.toString().trim();
+}
+function asInt(value) {
+    if (typeof value === 'number' && Number.isFinite(value))
+        return Math.round(value);
+    if (typeof value === 'string') {
+        const n = Number.parseInt(value, 10);
+        return Number.isFinite(n) ? n : 0;
+    }
+    return 0;
+}
+function asBool(value) {
+    return value === true;
+}
+async function applyWeeklyChallengeCommunityDelta(params) {
+    const { challengeId, weekId, participantsDelta, completedDelta, resetIfWeekMismatch } = params;
+    const safeWeekId = weekId.trim();
+    const safeChallengeId = challengeId.trim();
+    if (safeChallengeId.length === 0 || safeWeekId.length === 0)
+        return;
+    const db = admin.firestore();
+    const ref = db.collection('weeklyChallenges').doc(safeChallengeId);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const data = (snap.data() ?? {});
+        const currentWeekId = asString(data.communityWeekId);
+        if (currentWeekId.length > 0 && currentWeekId != safeWeekId && !resetIfWeekMismatch) {
+            return;
+        }
+        let participants = currentWeekId == safeWeekId ? asInt(data.communityParticipants) : 0;
+        let completed = currentWeekId == safeWeekId ? asInt(data.communityCompleted) : 0;
+        participants = Math.max(0, participants + participantsDelta);
+        completed = Math.max(0, completed + completedDelta);
+        if (completed > participants)
+            completed = participants;
+        const pct = participants <= 0 ? 0 : Math.round((completed / participants) * 100);
+        tx.set(ref, {
+            communityWeekId: safeWeekId,
+            communityParticipants: participants,
+            communityCompleted: completed,
+            communityCompletionPct: pct,
+            communityUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+}
+// Aggregate weekly challenge completion percentage.
+// This updates fields on weeklyChallenges/{challengeId} for the active weekId.
+exports.onWeeklyChallengeProgressWrite = functions.firestore
+    .document('users/{uid}/weeklyChallengeProgress/{challengeId}')
+    .onWrite(async (change, context) => {
+    const challengeId = context.params.challengeId ?? '';
+    const before = change.before.exists ? change.before.data() : null;
+    const after = change.after.exists ? change.after.data() : null;
+    const beforeWeekId = asString(before?.weekId);
+    const afterWeekId = asString(after?.weekId);
+    const beforeCompleted = asBool(before?.completed);
+    const afterCompleted = asBool(after?.completed);
+    const ops = [];
+    const enqueue = (p) => {
+        if (p.weekId.trim().length === 0)
+            return;
+        ops.push(applyWeeklyChallengeCommunityDelta({ challengeId, ...p }));
+    };
+    // Create
+    if (before == null && after != null) {
+        enqueue({
+            weekId: afterWeekId,
+            participantsDelta: 1,
+            completedDelta: afterCompleted ? 1 : 0,
+            resetIfWeekMismatch: true,
+        });
+    }
+    // Delete
+    if (before != null && after == null) {
+        enqueue({
+            weekId: beforeWeekId,
+            participantsDelta: -1,
+            completedDelta: beforeCompleted ? -1 : 0,
+            resetIfWeekMismatch: false,
+        });
+    }
+    // Update
+    if (before != null && after != null) {
+        if (beforeWeekId != afterWeekId) {
+            // Moved between weeks (challenge reused across weeks).
+            enqueue({
+                weekId: beforeWeekId,
+                participantsDelta: -1,
+                completedDelta: beforeCompleted ? -1 : 0,
+                resetIfWeekMismatch: false,
+            });
+            enqueue({
+                weekId: afterWeekId,
+                participantsDelta: 1,
+                completedDelta: afterCompleted ? 1 : 0,
+                resetIfWeekMismatch: true,
+            });
+        }
+        else if (beforeCompleted != afterCompleted) {
+            enqueue({
+                weekId: afterWeekId,
+                participantsDelta: 0,
+                completedDelta: afterCompleted ? 1 : -1,
+                resetIfWeekMismatch: false,
+            });
+        }
+    }
+    if (ops.length === 0)
+        return;
+    await Promise.all(ops);
 });

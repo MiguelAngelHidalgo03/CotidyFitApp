@@ -35,6 +35,9 @@ class NutritionTemplateModel {
     required this.totalLikes,
     required this.avgRating,
     required this.ratingCount,
+    required this.periodFriendly,
+    required this.periodSupportTags,
+    required this.periodBenefits,
   });
 
   final String id;
@@ -60,6 +63,9 @@ class NutritionTemplateModel {
   final int totalLikes;
   final double avgRating;
   final int ratingCount;
+  final bool periodFriendly;
+  final List<String> periodSupportTags;
+  final List<String> periodBenefits;
 
   static NutritionTemplateModel? fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snap,
@@ -94,6 +100,50 @@ class NutritionTemplateModel {
       if (v is num) return v.toDouble();
       if (v is String) return double.tryParse(v) ?? fallback;
       return fallback;
+    }
+
+    bool readBool(List<String> keys, {bool fallback = false}) {
+      for (final key in keys) {
+        final v = data[key];
+        if (v is bool) return v;
+        if (v is num) return v != 0;
+        if (v is String) {
+          switch (v.trim().toLowerCase()) {
+            case 'true':
+            case '1':
+            case 'si':
+            case 'yes':
+              return true;
+            case 'false':
+            case '0':
+            case 'no':
+              return false;
+          }
+        }
+      }
+      return fallback;
+    }
+
+    List<String> readStringList(List<String> keys) {
+      for (final key in keys) {
+        final raw = data[key];
+        if (raw is List) {
+          return raw
+              .map((e) => e?.toString().trim() ?? '')
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+        if (raw is String) {
+          final value = raw.trim();
+          if (value.isEmpty) continue;
+          return value
+              .split('|')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+      }
+      return const [];
     }
 
     final name = (data['name'] as String?)?.trim() ?? '';
@@ -145,6 +195,28 @@ class NutritionTemplateModel {
       totalLikes: readInt('total_likes', 0).clamp(0, 1 << 30),
       avgRating: readDouble('avg_rating', 0).clamp(0, 5),
       ratingCount: readInt('rating_count', 0).clamp(0, 1 << 30),
+      periodFriendly: readBool([
+        'periodFriendly',
+        'period_friendly',
+        'isPeriodFriendly',
+        'is_period_friendly',
+        'recommendedForPeriod',
+        'recommended_for_period',
+      ]),
+      periodSupportTags: readStringList([
+        'periodSupportTags',
+        'period_support_tags',
+        'periodTags',
+        'period_tags',
+        'womenCycleTags',
+        'women_cycle_tags',
+      ]),
+      periodBenefits: readStringList([
+        'periodBenefits',
+        'period_benefits',
+        'periodSupportBenefits',
+        'period_support_benefits',
+      ]),
     );
   }
 }

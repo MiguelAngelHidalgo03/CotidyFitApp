@@ -48,6 +48,198 @@ extension WorkTypeX on WorkType {
   }
 }
 
+enum UserStreakFocusArea {
+  nutrition,
+  training,
+  water,
+  steps,
+  dailyChallenge,
+}
+
+extension UserStreakFocusAreaX on UserStreakFocusArea {
+  String get label {
+    switch (this) {
+      case UserStreakFocusArea.nutrition:
+        return 'Nutricion';
+      case UserStreakFocusArea.training:
+        return 'Entrenamientos';
+      case UserStreakFocusArea.water:
+        return 'Agua';
+      case UserStreakFocusArea.steps:
+        return 'Pasos';
+      case UserStreakFocusArea.dailyChallenge:
+        return 'Retos diarios';
+    }
+  }
+
+  String get shortLabel {
+    switch (this) {
+      case UserStreakFocusArea.nutrition:
+        return 'Nutricion';
+      case UserStreakFocusArea.training:
+        return 'Entrenos';
+      case UserStreakFocusArea.water:
+        return 'Agua';
+      case UserStreakFocusArea.steps:
+        return 'Pasos';
+      case UserStreakFocusArea.dailyChallenge:
+        return 'Retos';
+    }
+  }
+
+  String get subtitle {
+    switch (this) {
+      case UserStreakFocusArea.nutrition:
+        return 'Cuenta el dia si registras al menos 3 comidas.';
+      case UserStreakFocusArea.training:
+        return 'Cuenta el dia si completas un entrenamiento.';
+      case UserStreakFocusArea.water:
+        return 'Cuenta el dia si llegas al objetivo de agua.';
+      case UserStreakFocusArea.steps:
+        return 'Cuenta el dia si alcanzas tu objetivo de pasos.';
+      case UserStreakFocusArea.dailyChallenge:
+        return 'Cuenta el dia si completas la mision diaria.';
+    }
+  }
+}
+
+enum UserStreakMixMode {
+  any,
+  all,
+}
+
+extension UserStreakMixModeX on UserStreakMixMode {
+  String get label {
+    switch (this) {
+      case UserStreakMixMode.any:
+        return 'Cumplir cualquiera';
+      case UserStreakMixMode.all:
+        return 'Cumplir todo';
+    }
+  }
+
+  String get subtitle {
+    switch (this) {
+      case UserStreakMixMode.any:
+        return 'La racha suma si completas al menos uno de tus focos.';
+      case UserStreakMixMode.all:
+        return 'La racha solo suma si completas todos tus focos elegidos.';
+    }
+  }
+}
+
+class UserStreakPreferences {
+  const UserStreakPreferences._({
+    required this.focusAreas,
+    required this.mixMode,
+  });
+
+  factory UserStreakPreferences({
+    List<UserStreakFocusArea> focusAreas = const [],
+    UserStreakMixMode mixMode = UserStreakMixMode.any,
+  }) {
+    final normalized = _normalizeAreas(focusAreas);
+    return UserStreakPreferences._(
+      focusAreas: normalized,
+      mixMode: normalized.length <= 1 ? UserStreakMixMode.any : mixMode,
+    );
+  }
+
+  static const UserStreakPreferences defaultTraining =
+      UserStreakPreferences._(
+        focusAreas: <UserStreakFocusArea>[UserStreakFocusArea.training],
+        mixMode: UserStreakMixMode.any,
+      );
+
+  final List<UserStreakFocusArea> focusAreas;
+  final UserStreakMixMode mixMode;
+
+  bool get isConfigured => focusAreas.isNotEmpty;
+  bool get isMultiFocus => focusAreas.length > 1;
+
+  String get title {
+    if (!isConfigured) return 'Sin configurar';
+    if (!isMultiFocus) return focusAreas.first.label;
+    return mixMode == UserStreakMixMode.all ? 'Mix completo' : 'Mix flexible';
+  }
+
+  String get summary {
+    if (!isConfigured) return 'Elige que acciones cuentan para tu racha.';
+    if (!isMultiFocus) return 'Tu racha cuenta con ${focusAreas.first.label.toLowerCase()}.';
+
+    final focusText = focusAreas.map((area) => area.shortLabel).join(' · ');
+    if (mixMode == UserStreakMixMode.all) {
+      return 'Tu racha cuenta cuando completas todo este mix: $focusText.';
+    }
+    return 'Tu racha cuenta cuando completas cualquiera de este mix: $focusText.';
+  }
+
+  String get chipLabel {
+    if (!isConfigured) return 'Sin configurar';
+    if (!isMultiFocus) return focusAreas.first.label;
+    return mixMode == UserStreakMixMode.all ? 'Mix total' : 'Mix flexible';
+  }
+
+  String get cacheKey {
+    final focusKey = focusAreas.map((area) => area.name).join(',');
+    return '${mixMode.name}:$focusKey';
+  }
+
+  UserStreakPreferences copyWith({
+    List<UserStreakFocusArea>? focusAreas,
+    UserStreakMixMode? mixMode,
+  }) {
+    return UserStreakPreferences(
+      focusAreas: focusAreas ?? this.focusAreas,
+      mixMode: mixMode ?? this.mixMode,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+        'focusAreas': focusAreas.map((area) => area.name).toList(),
+        'mixMode': mixMode.name,
+      };
+
+  static UserStreakPreferences? fromJson(Map<String, Object?> json) {
+    final focusRaw = json['focusAreas'];
+    final focusAreas = <UserStreakFocusArea>[];
+    if (focusRaw is List) {
+      for (final value in focusRaw) {
+        final area = UserStreakFocusArea.values
+            .where((entry) => entry.name == value)
+            .cast<UserStreakFocusArea?>()
+            .firstWhere((entry) => entry != null, orElse: () => null);
+        if (area != null && !focusAreas.contains(area)) {
+          focusAreas.add(area);
+        }
+      }
+    }
+
+    final mixRaw = json['mixMode'];
+    final mixMode = UserStreakMixMode.values
+        .where((entry) => entry.name == mixRaw)
+        .cast<UserStreakMixMode?>()
+        .firstWhere((entry) => entry != null, orElse: () => null);
+
+    final normalized = UserStreakPreferences(
+      focusAreas: focusAreas,
+      mixMode: mixMode ?? UserStreakMixMode.any,
+    );
+    return normalized.isConfigured ? normalized : null;
+  }
+
+  static List<UserStreakFocusArea> _normalizeAreas(
+    List<UserStreakFocusArea> areas,
+  ) {
+    final out = <UserStreakFocusArea>[];
+    for (final area in areas) {
+      if (!out.contains(area)) out.add(area);
+    }
+    out.sort((a, b) => a.index.compareTo(b.index));
+    return List<UserStreakFocusArea>.unmodifiable(out);
+  }
+}
+
 extension UserLevelX on UserLevel {
   String get label {
     switch (this) {
@@ -115,6 +307,7 @@ class UserProfile {
   final List<String> healthConditions;
   final WorkType? workType;
   final int? notificationMinutes; // minutes from midnight
+  final UserStreakPreferences? streakPreferences;
 
   // Personal info
   final int? age;
@@ -147,7 +340,24 @@ class UserProfile {
     this.healthConditions = const [],
     this.workType,
     this.notificationMinutes,
+    this.streakPreferences,
   });
+
+    bool get hasPersonalizedStreakPreferences =>
+      streakPreferences?.isConfigured == true;
+
+    UserStreakPreferences get effectiveStreakPreferences =>
+      streakPreferences?.isConfigured == true
+        ? streakPreferences!
+        : UserStreakPreferences.defaultTraining;
+
+    String get streakPreferencesTitle => hasPersonalizedStreakPreferences
+      ? effectiveStreakPreferences.title
+      : 'Sin configurar';
+
+    String get streakPreferencesSummary => hasPersonalizedStreakPreferences
+      ? effectiveStreakPreferences.summary
+      : 'Elige que quieres que cuente para mantener tu racha.';
 
   UserProfile copyWith({
     String? goal,
@@ -170,6 +380,7 @@ class UserProfile {
     List<String>? healthConditions,
     WorkType? workType,
     int? notificationMinutes,
+    UserStreakPreferences? streakPreferences,
   }) {
     return UserProfile(
       goal: goal ?? this.goal,
@@ -192,6 +403,7 @@ class UserProfile {
       healthConditions: healthConditions ?? this.healthConditions,
       workType: workType ?? this.workType,
       notificationMinutes: notificationMinutes ?? this.notificationMinutes,
+      streakPreferences: streakPreferences ?? this.streakPreferences,
     );
   }
 
@@ -216,6 +428,7 @@ class UserProfile {
       'healthConditions': healthConditions,
       'workType': workType?.name,
       'notificationMinutes': notificationMinutes,
+      'streakPreferences': streakPreferences?.toJson(),
       };
 
   static UserProfile? fromJson(Map<String, Object?> json) {
@@ -287,6 +500,13 @@ class UserProfile {
       }
     }
 
+    final streakRaw = json['streakPreferences'];
+    final streakPreferences = streakRaw is Map
+        ? UserStreakPreferences.fromJson(
+            streakRaw.map((k, v) => MapEntry(k.toString(), v)),
+          )
+        : null;
+
     return UserProfile(
       goal: goal.trim(),
       name: name is String && name.trim().isNotEmpty ? name.trim() : 'CotidyFit',
@@ -316,6 +536,7 @@ class UserProfile {
       notificationMinutes: json['notificationMinutes'] is int
           ? (json['notificationMinutes'] as int).clamp(0, 24 * 60 - 1)
           : null,
+      streakPreferences: streakPreferences,
     );
   }
 }

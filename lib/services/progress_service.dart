@@ -24,13 +24,16 @@ class ProgressService {
     required LocalStorageService storage,
     FirebaseFirestore? db,
     FirebaseAuth? auth,
-  })  : _storage = storage,
-        _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _storage = storage,
+       _dbOverride = db,
+       _authOverride = auth;
 
   final LocalStorageService _storage;
-  final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _dbOverride;
+  final FirebaseAuth? _authOverride;
+
+  FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   bool get _ready => Firebase.apps.isNotEmpty;
   String? get _uid => _ready ? _auth.currentUser?.uid : null;
@@ -62,8 +65,8 @@ class ProgressService {
             final v = raw is int
                 ? raw
                 : raw is num
-                    ? raw.round()
-                    : int.tryParse(raw?.toString() ?? '');
+                ? raw.round()
+                : int.tryParse(raw?.toString() ?? '');
             if (v == null) continue;
             history[key] = v.clamp(0, 100);
             await _storage.upsertCfForDate(dateKey: key, cf: v);
@@ -91,10 +94,17 @@ class ProgressService {
     // If today has an entry stored (completed), prefer that value.
     final entry = await _storage.getTodayEntry();
     if (entry is DailyEntry && entry.dateKey == todayKey) {
-      current = (current > entry.cfIndex ? current : entry.cfIndex).clamp(0, 100);
+      current = (current > entry.cfIndex ? current : entry.cfIndex).clamp(
+        0,
+        100,
+      );
     }
 
-    return ProgressData(currentCf: current, average7Days: avg, last7Days: points);
+    return ProgressData(
+      currentCf: current,
+      average7Days: avg,
+      last7Days: points,
+    );
   }
 
   String motivationalMessageForAverage(int avg) {

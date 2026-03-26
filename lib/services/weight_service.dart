@@ -25,12 +25,15 @@ class WeightSummary {
 class WeightService {
   static const _kWeightHistoryKey = 'cf_weight_history_json';
 
-  final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _dbOverride;
+  final FirebaseAuth? _authOverride;
 
   WeightService({FirebaseFirestore? db, FirebaseAuth? auth})
-      : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+    : _dbOverride = db,
+      _authOverride = auth;
+
+  FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   bool get _ready => Firebase.apps.isNotEmpty;
   String? get _uid => _ready ? _auth.currentUser?.uid : null;
@@ -112,11 +115,16 @@ class WeightService {
     final uid = _uid;
     if (uid != null) {
       try {
-        await _db.collection('users').doc(uid).collection('weightEntries').doc(key).set({
-          'dateKey': key,
-          'weight': weight,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        await _db
+            .collection('users')
+            .doc(uid)
+            .collection('weightEntries')
+            .doc(key)
+            .set({
+              'dateKey': key,
+              'weight': weight,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
       } catch (_) {
         // Keep local write as fallback.
       }
@@ -162,7 +170,9 @@ class WeightService {
       }
     }
 
-    final diffWeek = weekBefore == null ? null : (latest.weight - weekBefore.weight);
+    final diffWeek = weekBefore == null
+        ? null
+        : (latest.weight - weekBefore.weight);
 
     return WeightSummary(
       latest: latest,

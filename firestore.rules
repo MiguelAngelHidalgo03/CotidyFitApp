@@ -3,9 +3,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function _isAllowlistedAdminEmail() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email == 'cotidyfit@gmail.com';
+    }
+
     function _isAdmin() {
       return request.auth != null
-        && exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+        && (
+          _isAllowlistedAdminEmail()
+          || exists(/databases/$(database)/documents/admin_users/$(request.auth.uid))
+        );
     }
 
     function _pairContainsUid(pairId, uid) {
@@ -33,6 +42,15 @@ service cloud.firestore {
       return _blockedBy(a, b) || _blockedBy(b, a);
     }
 
+    function _isConfiguredCommunityCoach(uid) {
+      let ref = /databases/$(database)/documents/app_config/community;
+      return uid is string
+        && uid.size() > 0
+        && exists(ref)
+        && (get(ref).data.coach.uid is string)
+        && get(ref).data.coach.uid == uid;
+    }
+
     match /reports/{reportId} {
       allow create: if request.auth != null
         && request.resource.data.reportedBy == request.auth.uid
@@ -40,6 +58,13 @@ service cloud.firestore {
         && request.resource.data.reason is string;
 
       allow read, update, delete: if false;
+    }
+
+    // Aggregated counters for admin moderation UI.
+    // Written by Cloud Functions (Admin SDK) and readable only by admins.
+    match /reportCounters/{uid} {
+      allow get, list: if _isAdmin();
+      allow create, update, delete: if false;
     }
 
     match /mutedChats/{docId} {
@@ -66,7 +91,10 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow get, list: if request.auth != null
+        && (request.auth.uid == userId || _isAdmin());
+
+      allow create, update, delete: if request.auth != null && request.auth.uid == userId;
 
       match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
@@ -83,7 +111,7 @@ service cloud.firestore {
     // Public Community profile (no sensitive data)
     match /user_public/{uid} {
       allow read: if request.auth != null
-        && (request.auth.uid == uid || resource.data.visible != false);
+        && (_isAdmin() || request.auth.uid == uid || resource.data.visible != false);
 
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if false;
@@ -98,6 +126,22 @@ service cloud.firestore {
     }
 
     // Recipes catalog managed outside the app.
+    match /suggestions/{suggestionId} {
+      allow get, list: if _isAdmin();
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.topic is string
+        && request.resource.data.topic.size() > 0
+        && request.resource.data.topic.size() <= 80
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 4000
+        && request.resource.data.source == 'app'
+        && request.resource.data.status == 'new';
+      allow update: if false;
+      allow delete: if _isAdmin();
+    }
+
     match /recipes/{recipeId} {
       allow get, list: if request.auth != null;
       allow create, update, delete: if _isAdmin();
@@ -262,6 +306,8 @@ service cloud.firestore {
     // Chats (DM uses pairId) + messages
     match /chats/{chatId} {
       allow get: if request.auth != null && (
+        _isAdmin()
+        ||
         (
           (resource.data.members is list)
           && (request.auth.uid in resource.data.members)
@@ -276,7 +322,7 @@ service cloud.firestore {
       // Keep list() queryable for: where('members', arrayContains: request.auth.uid)
       // Avoid additional predicates that the query can't guarantee.
       allow list: if request.auth != null
-        && (request.auth.uid in resource.data.members);
+        && (_isAdmin() || (request.auth.uid in resource.data.members));
 
       allow create: if request.auth != null
         && (request.resource.data.members is list)
@@ -298,24 +344,84 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow read: if request.auth != null
-          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
-          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
-          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
-          && !_eitherBlocked(
-            get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
-            get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
+          && (
+            _isAdmin()
+            || (
+              (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
+              && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+              && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
+              && !_eitherBlocked(
+                get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
+                get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
+              )
+            )
           );
 
         allow create: if request.auth != null
-          && request.resource.data.senderUid == request.auth.uid
-          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
-          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
-          && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
-          && !_eitherBlocked(
-            get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
-            get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
-          )
-          && exists(/databases/$(database)/documents/friendships/$(chatId));
+          && (
+            (
+              request.resource.data.senderUid == request.auth.uid
+              && (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
+              && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+              && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
+              && !_eitherBlocked(
+                get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
+                get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
+              )
+              && exists(/databases/$(database)/documents/friendships/$(chatId))
+            )
+            || (
+              _isAdmin()
+              && (request.resource.data.text is string)
+              && (request.resource.data.type is string)
+              && (request.resource.data.senderUid is string)
+              && _isConfiguredCommunityCoach(request.resource.data.senderUid)
+              && (get(/databases/$(database)/documents/chats/$(chatId)).data.members is list)
+              && request.resource.data.senderUid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+              && (get(/databases/$(database)/documents/chats/$(chatId)).data.members.size() == 2)
+              && !_eitherBlocked(
+                get(/databases/$(database)/documents/chats/$(chatId)).data.members[0],
+                get(/databases/$(database)/documents/chats/$(chatId)).data.members[1]
+              )
+              && exists(/databases/$(database)/documents/friendships/$(chatId))
+            )
+          );
+
+        allow update, delete: if false;
+      }
+    }
+
+    // Community groups (moderated): anyone authenticated can read;
+    // only admin-approved members can write messages.
+    function _communityMemberRef(groupId, uid) {
+      return /databases/$(database)/documents/communityGroups/$(groupId)/members/$(uid);
+    }
+
+    function _isApprovedCommunityMember(groupId) {
+      return request.auth != null
+        && exists(_communityMemberRef(groupId, request.auth.uid))
+        && (get(_communityMemberRef(groupId, request.auth.uid)).data.status == 'approved');
+    }
+
+    match /communityGroups/{groupId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if _isAdmin();
+
+      match /members/{uid} {
+        allow get: if request.auth != null && (request.auth.uid == uid || _isAdmin());
+        allow list: if _isAdmin();
+        allow create, update: if _isAdmin();
+        allow delete: if request.auth != null && (request.auth.uid == uid || _isAdmin());
+      }
+
+      match /messages/{messageId} {
+        allow read: if request.auth != null;
+
+        allow create: if request.auth != null
+          && (request.resource.data.senderUid == request.auth.uid)
+          && (request.resource.data.text is string)
+          && (request.resource.data.type is string)
+          && (_isAdmin() || _isApprovedCommunityMember(groupId));
 
         allow update, delete: if false;
       }

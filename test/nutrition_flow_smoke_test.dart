@@ -14,12 +14,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 800));
 
     expect(find.widgetWithText(Tab, 'Plantillas'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Explorar recetas'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Recetas favoritas'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Recetas'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Favoritos'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Mi día'), findsOneWidget);
 
     // Default tab is now "Plantillas"; switch to Explore.
-    await tester.tap(find.widgetWithText(Tab, 'Explorar recetas'));
+    await tester.tap(find.widgetWithText(Tab, 'Recetas'));
     await tester.pump(const Duration(milliseconds: 300));
 
     // Wait for recipes to load then open first card.

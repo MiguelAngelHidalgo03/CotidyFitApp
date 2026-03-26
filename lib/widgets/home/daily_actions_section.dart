@@ -47,17 +47,34 @@ class DailyActionsSection extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(22)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
+        boxShadow: [
+          BoxShadow(
+            color: context.cfShadow,
+            blurRadius: context.cfIsDark ? 24 : 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             '¿Qué has hecho hoy?',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 22),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Registra lo importante del día y confirma cuando cierres tu progreso.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.cfTextSecondary,
+              height: 1.35,
+            ),
           ),
           const SizedBox(height: 12),
           _ActionCard(
@@ -107,7 +124,8 @@ class DailyActionsSection extends StatelessWidget {
           const SizedBox(height: 10),
           _ActionCard(
             title: 'Comidas',
-            subtitle: '$mealsLoggedCount / ${DailyDataService.mealsTarget} (desde Nutrición)',
+            subtitle:
+                '$mealsLoggedCount / ${DailyDataService.mealsTarget} (desde Nutrición)',
             icon: Icons.restaurant_outlined,
             completed: mealsLoggedCount >= DailyDataService.mealsTarget,
             disabled: false,
@@ -119,7 +137,9 @@ class DailyActionsSection extends StatelessWidget {
             subtitle:
                 '${data.meditationMinutes} / ${DailyDataService.meditationMinutesTarget} min',
             icon: Icons.self_improvement_outlined,
-            completed: data.meditationMinutes >= DailyDataService.meditationMinutesTarget,
+            completed:
+                data.meditationMinutes >=
+                DailyDataService.meditationMinutesTarget,
             disabled: completedToday,
             onTap: () => _editInt(
               context: context,
@@ -142,15 +162,17 @@ class DailyActionsSection extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress.clamp(0.0, 1.0),
                     minHeight: 10,
-                    backgroundColor: CFColors.softGray,
-                    valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                    backgroundColor: context.cfBorder,
+                    valueColor: AlwaysStoppedAnimation(context.cfPrimary),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               Text(
                 '$done/$total',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -164,10 +186,14 @@ class DailyActionsSection extends StatelessWidget {
                       await onConfirm();
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Día registrado. Cada día cuenta.')),
+                        const SnackBar(
+                          content: Text('Día registrado. Cada día cuenta.'),
+                        ),
                       );
                     },
-              child: Text(completedToday ? 'Hoy ya está completado' : 'Confirmar día'),
+              child: Text(
+                completedToday ? 'Hoy ya está completado' : 'Confirmar día',
+              ),
             ),
           ),
         ],
@@ -184,7 +210,9 @@ class DailyActionsSection extends StatelessWidget {
   }) async {
     if (completedToday) return;
 
-    final controller = TextEditingController(text: initial <= 0 ? '' : '$initial');
+    final controller = TextEditingController(
+      text: initial <= 0 ? '' : '$initial',
+    );
     final result = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -203,14 +231,22 @@ class DailyActionsSection extends StatelessWidget {
                   const SizedBox(height: 10),
                   TextField(
                     controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: false, signed: false),
-                    decoration: InputDecoration(hintText: hint, border: const OutlineInputBorder()),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: false,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: hint,
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () => Navigator.of(ctx).pop(int.tryParse(controller.text.trim()) ?? 0),
+                      onPressed: () => Navigator.of(
+                        ctx,
+                      ).pop(int.tryParse(controller.text.trim()) ?? 0),
                       child: const Text('Guardar'),
                     ),
                   ),
@@ -235,7 +271,9 @@ class DailyActionsSection extends StatelessWidget {
   }) async {
     if (completedToday) return;
 
-    final controller = TextEditingController(text: initial <= 0 ? '' : initial.toStringAsFixed(2));
+    final controller = TextEditingController(
+      text: initial <= 0 ? '' : initial.toStringAsFixed(2),
+    );
     final result = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
@@ -254,8 +292,14 @@ class DailyActionsSection extends StatelessWidget {
                   const SizedBox(height: 10),
                   TextField(
                     controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-                    decoration: InputDecoration(hintText: hint, border: const OutlineInputBorder()),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: hint,
+                      border: const OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -309,14 +353,15 @@ class _ActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: CFColors.surface,
+      color: Colors.transparent,
       child: InkWell(
         onTap: disabled ? null : onTap,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
         child: Container(
           decoration: BoxDecoration(
+            color: context.cfSurface,
             borderRadius: const BorderRadius.all(Radius.circular(18)),
-            border: Border.all(color: CFColors.softGray),
+            border: Border.all(color: context.cfBorder),
           ),
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -325,11 +370,11 @@ class _ActionCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.10),
+                  color: context.cfPrimaryTint,
                   borderRadius: const BorderRadius.all(Radius.circular(14)),
-                  border: Border.all(color: CFColors.softGray),
+                  border: Border.all(color: context.cfPrimaryTintStrong),
                 ),
-                child: Icon(icon, color: CFColors.primary),
+                child: Icon(icon, color: context.cfPrimary),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -339,22 +384,25 @@ class _ActionCard extends StatelessWidget {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 2),
-                    Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: context.cfTextSecondary,
+                        height: 1.3,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 8),
-                trailing!,
-              ],
+              if (trailing != null) ...[const SizedBox(width: 8), trailing!],
               const SizedBox(width: 8),
               Icon(
                 completed ? Icons.check_circle : Icons.chevron_right,
-                color: completed ? CFColors.primary : CFColors.textSecondary,
+                color: completed ? context.cfPrimary : context.cfTextSecondary,
               ),
             ],
           ),
@@ -377,12 +425,14 @@ class _QuickSmallButton extends StatelessWidget {
       style: FilledButton.styleFrom(
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        backgroundColor: CFColors.primary.withValues(alpha: 0.12),
-        foregroundColor: CFColors.primary,
+        backgroundColor: context.cfPrimaryTint,
+        foregroundColor: context.cfPrimary,
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w900),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -401,7 +451,9 @@ class _WaterTrailing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ratio = (liters / DailyDataService.waterLitersTarget).clamp(0, 1).toDouble();
+    final ratio = (liters / DailyDataService.waterLitersTarget)
+        .clamp(0, 1)
+        .toDouble();
     final pct = (ratio * 100).round();
 
     return Row(
@@ -416,22 +468,22 @@ class _WaterTrailing extends StatelessWidget {
               CircularProgressIndicator(
                 value: ratio,
                 strokeWidth: 4,
-                backgroundColor: CFColors.softGray,
-                valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                backgroundColor: context.cfBorder,
+                valueColor: AlwaysStoppedAnimation(context.cfPrimary),
               ),
               Text(
                 '$pct%',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(width: 8),
         _QuickSmallButton(
-          label: '+250ml',
+          label: 'Añadir un vaso de agua.',
           onTap: disabled ? null : () async => onAdd250ml(),
         ),
       ],

@@ -3,9 +3,20 @@ import '../models/recipe_model.dart';
 import '../models/user_profile.dart';
 
 class NutritionPersonalizationService {
-  static double recipeRecommendationScore(UserProfile? profile, RecipeModel recipe) {
+  static double recipeRecommendationScore(
+    UserProfile? profile,
+    RecipeModel recipe, {
+    bool isPeriodActive = false,
+  }) {
     final popularity = (recipe.ratingAvg * 12) + (recipe.likes.clamp(0, 500) * 0.06);
-    if (profile == null) return popularity;
+    final periodBonus = isPeriodActive
+        ? _periodSupportBonus(
+            friendly: recipe.periodFriendly,
+            tags: recipe.periodSupportTags,
+            benefits: recipe.periodBenefits,
+          )
+        : 0.0;
+    if (profile == null) return popularity + periodBonus;
 
     final targetMealKcal = _targetMealKcal(profile);
     final kcalPenalty = (recipe.kcalPerServing - targetMealKcal).abs();
@@ -22,12 +33,23 @@ class NutritionPersonalizationService {
       UserLevel.avanzado => recipe.difficulty == DifficultyLevel.hard ? 6.0 : 2.0,
     };
 
-    return popularity + kcalScore + goalScore + levelBonus;
+    return popularity + kcalScore + goalScore + levelBonus + periodBonus;
   }
 
-  static double templateRecommendationScore(UserProfile? profile, NutritionTemplateModel template) {
+  static double templateRecommendationScore(
+    UserProfile? profile,
+    NutritionTemplateModel template, {
+    bool isPeriodActive = false,
+  }) {
     final popularity = (template.avgRating * 12) + (template.totalLikes.clamp(0, 500) * 0.06);
-    if (profile == null) return popularity;
+    final periodBonus = isPeriodActive
+        ? _periodSupportBonus(
+            friendly: template.periodFriendly,
+            tags: template.periodSupportTags,
+            benefits: template.periodBenefits,
+          )
+        : 0.0;
+    if (profile == null) return popularity + periodBonus;
 
     final targetDailyKcal = _targetDailyKcal(profile);
     final kcalPenalty = (template.caloriesTotal.toDouble() - targetDailyKcal).abs();
@@ -38,7 +60,7 @@ class NutritionPersonalizationService {
       recipeGoals: template.goalTags,
     );
 
-    return popularity + kcalScore + goalScore;
+    return popularity + kcalScore + goalScore + periodBonus;
   }
 
   static double suggestedRecipeServingFactor(UserProfile? profile, RecipeModel recipe) {
@@ -117,5 +139,34 @@ class NutritionPersonalizationService {
       score += 6;
     }
     return score;
+  }
+
+  static double _periodSupportBonus({
+    required bool friendly,
+    required List<String> tags,
+    required List<String> benefits,
+  }) {
+    final normalizedTags = {
+      ...tags.map(_normalizeTag),
+      ...benefits.map(_normalizeTag),
+    };
+
+    if (!friendly && normalizedTags.isEmpty) return 0;
+
+    var score = friendly ? 26.0 : 18.0;
+    if (normalizedTags.any((e) => e.contains('dolor') || e.contains('pain') || e.contains('cramp'))) {
+      score += 4;
+    }
+    if (normalizedTags.any((e) => e.contains('hinch') || e.contains('bloat'))) {
+      score += 3;
+    }
+    if (normalizedTags.any((e) => e.contains('energia') || e.contains('fatiga') || e.contains('iron'))) {
+      score += 3;
+    }
+    return score;
+  }
+
+  static String _normalizeTag(String value) {
+    return value.trim().toLowerCase().replaceAll('_', ' ');
   }
 }

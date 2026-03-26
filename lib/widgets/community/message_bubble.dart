@@ -242,11 +242,12 @@ class MessageBubble extends StatelessWidget {
   ) async {
     final current = (_readInt(share['currentStreak']) ?? 0).clamp(0, 36500);
     final best = (_readInt(share['maxStreak']) ?? 0).clamp(0, 36500);
+    final streakTitle = _readString(share['streakTitle']) ?? 'Racha personalizada';
     final summary = _readString(share['summary']) ?? message.text;
 
     await _showDetailSheet(
       context,
-      title: 'Rachas',
+      title: streakTitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

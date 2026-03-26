@@ -12,6 +12,7 @@ import '../../../services/nutrition_personalization_service.dart';
 import '../../../widgets/nutrition/recipe_card.dart';
 import '../../../widgets/nutrition/recipe_compact_card.dart';
 import '../../../widgets/progress/progress_section_card.dart';
+import '../../../services/women_cycle_service.dart';
 import '../recipe_detail_screen.dart';
 import '../widgets/recipe_filters_sheet.dart';
 
@@ -26,6 +27,7 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   final RecipeRepository _recipes = RecipesRepositoryFactory.create();
   final _profileService = ProfileService();
   final _settingsService = SettingsService();
+  final _cycleService = WomenCycleService();
 
   List<RecipeModel> _all = const [];
   bool _loading = true;
@@ -33,6 +35,7 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   RecipeFilters _filters = RecipeFilters.empty();
   UserProfile? _profile;
   bool _showNutritionValues = true;
+  bool _prioritizePeriodRecipes = false;
 
   @override
   void initState() {
@@ -44,16 +47,21 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final items = await _recipes
-          .getAllRecipes()
-          .timeout(const Duration(seconds: 10));
+      final items = await _recipes.getAllRecipes().timeout(
+        const Duration(seconds: 10),
+      );
       final profile = await _profileService.getProfile();
       final settings = await _settingsService.getSettings();
+      final cycle = await _cycleService.getCurrentCycle();
+      final prioritizePeriodRecipes =
+          profile?.sex == UserSex.mujer &&
+          (cycle?.includes(DateTime.now()) ?? false);
       if (!mounted) return;
       setState(() {
         _all = items;
         _profile = profile;
         _showNutritionValues = settings.showNutritionValues;
+        _prioritizePeriodRecipes = prioritizePeriodRecipes;
       });
     } catch (e) {
       if (!mounted) return;
@@ -77,8 +85,16 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
   List<RecipeModel> get _recommendedSorted {
     final list = [..._filteredBase];
     list.sort((a, b) {
-      final sb = NutritionPersonalizationService.recipeRecommendationScore(_profile, b);
-      final sa = NutritionPersonalizationService.recipeRecommendationScore(_profile, a);
+      final sb = NutritionPersonalizationService.recipeRecommendationScore(
+        _profile,
+        b,
+        isPeriodActive: _prioritizePeriodRecipes,
+      );
+      final sa = NutritionPersonalizationService.recipeRecommendationScore(
+        _profile,
+        a,
+        isPeriodActive: _prioritizePeriodRecipes,
+      );
       final r = sb.compareTo(sa);
       if (r != 0) return r;
       return b.likes.compareTo(a.likes);
@@ -228,6 +244,25 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                 ],
                 if (recommended.isNotEmpty) ...[
                   const SizedBox(height: 16),
+                  if (_prioritizePeriodRecipes)
+                    ProgressSectionCard(
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.favorite_outline,
+                            color: context.cfPrimary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Ahora te mostramos primero recetas pensadas para acompañarte mejor durante la regla.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_prioritizePeriodRecipes) const SizedBox(height: 12),
                   const _SectionHeader(title: 'Recomendadas'),
                   const SizedBox(height: 10),
                   SizedBox(

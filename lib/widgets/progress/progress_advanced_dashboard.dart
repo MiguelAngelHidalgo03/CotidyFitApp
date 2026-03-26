@@ -132,20 +132,32 @@ class _TopNarrativeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cfValueText = cfCurrent == null ? '—' : '$cfCurrent';
+    final isDark = context.cfIsDark;
+    final gradientColors = isDark
+        ? const [Color(0xFF132338), Color(0xFF1B314D)]
+        : const [Color(0xFF27426B), Color(0xFF3E669D)];
+    final shadowColor = isDark
+        ? Colors.black.withValues(alpha: 0.30)
+        : const Color(0xFF27426B).withValues(alpha: 0.22);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF27426B), Color(0xFF3E669D)],
+        gradient: LinearGradient(
+          colors: gradientColors,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: const BorderRadius.all(Radius.circular(18)),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.10),
+        ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF27426B).withValues(alpha: 0.22),
+            color: shadowColor,
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -203,11 +215,19 @@ class _HeroKpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.cfIsDark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: 0.16),
         borderRadius: const BorderRadius.all(Radius.circular(14)),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.10),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,7 +383,7 @@ class _WellbeingSummaryCard extends StatelessWidget {
 
     final sectionTitleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontWeight: FontWeight.w900,
-      color: CFColors.textPrimary,
+      color: context.cfTextPrimary,
     );
 
     return ProgressSectionCard(
@@ -384,7 +404,9 @@ class _WellbeingSummaryCard extends StatelessWidget {
                 title: 'Balance vida saludable',
                 value: '${advanced.healthyLifeBalanceScore}%',
                 subtitle: percentDescriptor(advanced.healthyLifeBalanceScore),
-                indicator: _PercentBar(percent: advanced.healthyLifeBalanceScore),
+                indicator: _PercentBar(
+                  percent: advanced.healthyLifeBalanceScore,
+                ),
               ),
             ],
           ),
@@ -453,13 +475,14 @@ class _WellbeingHighlightTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return Container(
       constraints: const BoxConstraints.tightFor(height: 140),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,10 +491,10 @@ class _WellbeingHighlightTile extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: CFColors.primary.withValues(alpha: 0.10),
+              color: context.cfPrimaryTint,
               borderRadius: const BorderRadius.all(Radius.circular(14)),
             ),
-            child: Icon(icon, color: CFColors.primary, size: 20),
+            child: Icon(icon, color: primary, size: 20),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -484,7 +507,7 @@ class _WellbeingHighlightTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: CFColors.textPrimary,
+                    color: context.cfTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -526,8 +549,8 @@ class _PercentBar extends StatelessWidget {
       child: LinearProgressIndicator(
         value: (percent / 100).clamp(0.0, 1.0),
         minHeight: 7,
-        color: CFColors.primary,
-        backgroundColor: CFColors.softGray,
+        color: context.cfPrimary,
+        backgroundColor: context.cfBorder,
       ),
     );
   }
@@ -541,6 +564,7 @@ class _RatingDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     final hasData = value > 0;
     final score = hasData ? (inverted ? (6 - value) : value) : 0.0;
     final clamped = score.clamp(0.0, 5.0);
@@ -554,7 +578,7 @@ class _RatingDots extends StatelessWidget {
             height: 6,
             margin: EdgeInsets.only(right: i == 4 ? 0 : 4),
             decoration: BoxDecoration(
-              color: i < filled ? CFColors.primary : CFColors.softGray,
+              color: i < filled ? primary : context.cfBorder,
               borderRadius: const BorderRadius.all(Radius.circular(999)),
             ),
           ),
@@ -582,12 +606,13 @@ class _WellbeingMetricRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         children: [
@@ -595,11 +620,13 @@ class _WellbeingMetricRow extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.55),
+              color: context.cfSurface.withValues(
+                alpha: context.cfIsDark ? 0.7 : 0.9,
+              ),
               borderRadius: const BorderRadius.all(Radius.circular(14)),
-              border: Border.all(color: CFColors.softGray),
+              border: Border.all(color: context.cfBorder),
             ),
-            child: Icon(icon, color: CFColors.primary, size: 18),
+            child: Icon(icon, color: primary, size: 18),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -610,7 +637,7 @@ class _WellbeingMetricRow extends StatelessWidget {
                   label,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: CFColors.textPrimary,
+                    color: context.cfTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -788,9 +815,7 @@ class _ActivitySummaryCard extends StatelessWidget {
 }
 
 class _ActivityLevelBox extends StatelessWidget {
-  const _ActivityLevelBox({
-    required this.child,
-  });
+  const _ActivityLevelBox({required this.child});
 
   final Widget child;
 
@@ -800,15 +825,13 @@ class _ActivityLevelBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          child,
-        ],
+        children: [child],
       ),
     );
   }
@@ -875,9 +898,9 @@ class _NutritionSummaryCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: CFColors.background,
+              color: context.cfSoftSurface,
               borderRadius: const BorderRadius.all(Radius.circular(16)),
-              border: Border.all(color: CFColors.softGray),
+              border: Border.all(color: context.cfBorder),
             ),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 280),
@@ -961,6 +984,7 @@ class _WeightSummaryExtendedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     final monthDelta = summary.monthlyComparison;
     final currentWeightText = summary.currentWeight == null
         ? '—'
@@ -990,9 +1014,9 @@ class _WeightSummaryExtendedCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: CFColors.background,
+              color: context.cfSoftSurface,
               borderRadius: const BorderRadius.all(Radius.circular(16)),
-              border: Border.all(color: CFColors.softGray),
+              border: Border.all(color: context.cfBorder),
             ),
             child: Row(
               children: [
@@ -1000,12 +1024,12 @@ class _WeightSummaryExtendedCard extends StatelessWidget {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: CFColors.primary.withValues(alpha: 0.10),
+                    color: context.cfPrimaryTint,
                     borderRadius: const BorderRadius.all(Radius.circular(14)),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.monitor_weight_outlined,
-                    color: CFColors.primary,
+                    color: primary,
                     size: 20,
                   ),
                 ),
@@ -1061,9 +1085,9 @@ class _WeightSummaryExtendedCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: CFColors.background,
+              color: context.cfSoftSurface,
               borderRadius: const BorderRadius.all(Radius.circular(16)),
-              border: Border.all(color: CFColors.softGray),
+              border: Border.all(color: context.cfBorder),
             ),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 280),
@@ -1183,8 +1207,8 @@ class _LinearPercent extends StatelessWidget {
         LinearProgressIndicator(
           value: (percent / 100).clamp(0.0, 1.0),
           minHeight: 7,
-          color: CFColors.primary,
-          backgroundColor: CFColors.softGray,
+          color: context.cfPrimary,
+          backgroundColor: context.cfBorder,
         ),
       ],
     );
@@ -1268,7 +1292,8 @@ class _MiniLineChartState extends State<_MiniLineChart> {
     if (!changed && widget.points.isNotEmpty && oldWidget.points.isNotEmpty) {
       final oldLast = oldWidget.points.last;
       final nextLast = widget.points.last;
-      changed = oldLast.label != nextLast.label || oldLast.value != nextLast.value;
+      changed =
+          oldLast.label != nextLast.label || oldLast.value != nextLast.value;
     }
 
     if (changed) {
@@ -1288,9 +1313,9 @@ class _MiniLineChartState extends State<_MiniLineChart> {
       return Container(
         height: 120,
         decoration: BoxDecoration(
-          color: CFColors.background,
+          color: context.cfSoftSurface,
           borderRadius: const BorderRadius.all(Radius.circular(14)),
-          border: Border.all(color: CFColors.softGray),
+          border: Border.all(color: context.cfBorder),
         ),
         alignment: Alignment.center,
         child: Text(
@@ -1348,7 +1373,7 @@ class _MiniLineChartState extends State<_MiniLineChart> {
                 show: true,
                 drawVerticalLine: false,
                 getDrawingHorizontalLine: (_) =>
-                    FlLine(color: CFColors.softGray, strokeWidth: 1),
+                    FlLine(color: context.cfBorder, strokeWidth: 1),
               ),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
@@ -1408,7 +1433,7 @@ class _MiniLineChartState extends State<_MiniLineChart> {
                 LineChartBarData(
                   spots: spots,
                   isCurved: true,
-                  color: CFColors.primary,
+                  color: context.cfPrimary,
                   barWidth: 2.5,
                   dotData: FlDotData(
                     show: true,
@@ -1419,7 +1444,7 @@ class _MiniLineChartState extends State<_MiniLineChart> {
                   ),
                   belowBarData: BarAreaData(
                     show: true,
-                    color: CFColors.primary.withValues(alpha: 0.10),
+                    color: context.cfPrimaryTint,
                   ),
                 ),
               ],
@@ -1450,6 +1475,26 @@ class _GoalsBarsChart extends StatefulWidget {
 class _GoalsBarsChartState extends State<_GoalsBarsChart> {
   int? _selectedIndex;
 
+  String _axisLabelFor(String rawLabel, {required bool compact}) {
+    final normalized = rawLabel.trim().toLowerCase();
+    if (!compact) return rawLabel;
+
+    switch (normalized) {
+      case 'entrenamiento':
+        return 'Entreno';
+      case 'nutrición':
+      case 'nutricion':
+        return 'Nutri.';
+      case 'salud':
+        return 'Salud';
+      case 'mental':
+        return 'Mental';
+      default:
+        if (rawLabel.length <= 8) return rawLabel;
+        return '${rawLabel.substring(0, 7)}.';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
@@ -1461,111 +1506,135 @@ class _GoalsBarsChartState extends State<_GoalsBarsChart> {
     }
 
     final entries = data.entries.toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: 170,
-          child: BarChart(
-            BarChartData(
-              minY: 0,
-              maxY: 100,
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                horizontalInterval: 25,
-                getDrawingHorizontalLine: (_) =>
-                    FlLine(color: CFColors.softGray, strokeWidth: 1),
-              ),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                leftTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, _) {
-                      final i = value.toInt();
-                      if (i < 0 || i >= entries.length) {
-                        return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final slotWidth = constraints.maxWidth / max(1, entries.length);
+        final compactLabels = slotWidth < 84;
+        final labelMaxWidth = compactLabels
+            ? max(44.0, slotWidth - 4)
+            : max(58.0, slotWidth - 6);
+        final bottomReservedSize = compactLabels ? 32.0 : 42.0;
+        final barWidth = compactLabels ? 12.0 : (slotWidth < 104 ? 14.0 : 18.0);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: compactLabels ? 178 : 186,
+              child: BarChart(
+                BarChartData(
+                  minY: 0,
+                  maxY: 100,
+                  alignment: BarChartAlignment.spaceAround,
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: 25,
+                    getDrawingHorizontalLine: (_) =>
+                        FlLine(color: context.cfBorder, strokeWidth: 1),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: bottomReservedSize,
+                        getTitlesWidget: (value, _) {
+                          final i = value.toInt();
+                          if (i < 0 || i >= entries.length) {
+                            return const SizedBox.shrink();
+                          }
+
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: SizedBox(
+                              width: labelMaxWidth,
+                              child: Text(
+                                _axisLabelFor(
+                                  entries[i].key,
+                                  compact: compactLabels,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipColor: (_) => const Color(0xFF1E2633),
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        if (groupIndex < 0 || groupIndex >= entries.length) {
+                          return null;
+                        }
+                        return BarTooltipItem(
+                          '${entries[groupIndex].key}\n${entries[groupIndex].value}%',
+                          const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        );
+                      },
+                    ),
+                    touchCallback: (event, response) {
+                      if (!event.isInterestedForInteractions) return;
+                      final spot = response?.spot;
+                      if (spot == null) return;
+                      final nextIndex = spot.touchedBarGroupIndex;
+                      if (_selectedIndex != nextIndex) {
+                        Feedback.forTap(context);
                       }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          entries[i].key,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      );
+                      setState(() {
+                        _selectedIndex = nextIndex;
+                      });
                     },
                   ),
+                  barGroups: [
+                    for (var i = 0; i < entries.length; i++)
+                      BarChartGroupData(
+                        x: i,
+                        barRods: [
+                          BarChartRodData(
+                            toY: entries[i].value.toDouble().clamp(0, 100),
+                            width: barWidth,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(6),
+                            ),
+                            color: _selectedIndex == i
+                                ? context.cfPrimary
+                                : context.cfPrimary.withValues(alpha: 0.55),
+                          ),
+                        ],
+                      ),
+                  ],
                 ),
               ),
-              barTouchData: BarTouchData(
-                enabled: true,
-                touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (_) => const Color(0xFF1E2633),
-                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                    if (groupIndex < 0 || groupIndex >= entries.length) {
-                      return null;
-                    }
-                    return BarTooltipItem(
-                      '${entries[groupIndex].key}\n${entries[groupIndex].value}%',
-                      const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    );
-                  },
-                ),
-                touchCallback: (event, response) {
-                  if (!event.isInterestedForInteractions) return;
-                  final spot = response?.spot;
-                  if (spot == null) return;
-                  final nextIndex = spot.touchedBarGroupIndex;
-                  if (_selectedIndex != nextIndex) {
-                    Feedback.forTap(context);
-                  }
-                  setState(() {
-                    _selectedIndex = nextIndex;
-                  });
-                },
-              ),
-              barGroups: [
-                for (var i = 0; i < entries.length; i++)
-                  BarChartGroupData(
-                    x: i,
-                    barRods: [
-                      BarChartRodData(
-                        toY: entries[i].value.toDouble().clamp(0, 100),
-                        width: 18,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(6),
-                        ),
-                        color: _selectedIndex == i
-                            ? CFColors.primary
-                            : CFColors.primary.withValues(alpha: 0.55),
-                      ),
-                    ],
-                  ),
-              ],
             ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _selectedIndex == null
-              ? 'Toca una barra para ver detalle.'
-              : 'Detalle: ${entries[_selectedIndex!].key} · ${entries[_selectedIndex!].value}%',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
+            const SizedBox(height: 6),
+            Text(
+              _selectedIndex == null
+                  ? 'Toca una barra para ver detalle.'
+                  : 'Detalle: ${entries[_selectedIndex!].key} · ${entries[_selectedIndex!].value}%',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1586,9 +1655,9 @@ class _MacroLegend extends StatelessWidget {
               margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: CFColors.background,
+                color: context.cfSoftSurface,
                 borderRadius: const BorderRadius.all(Radius.circular(12)),
-                border: Border.all(color: CFColors.softGray),
+                border: Border.all(color: context.cfBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

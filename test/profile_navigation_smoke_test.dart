@@ -22,7 +22,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('Perfil deportivo'), findsOneWidget);
+    expect(find.text('Tu perfil deportivo'), findsOneWidget);
 
     // The screen is a ListView; scroll to build lower sections.
     await tester.scrollUntilVisible(

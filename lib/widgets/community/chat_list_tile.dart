@@ -39,10 +39,12 @@ class ChatListTile extends StatelessWidget {
   }
 
   String _timeLabel(int ms) {
+    if (ms <= 0) return '';
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
     final now = DateTime.now();
 
-    final sameDay = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final sameDay =
+        dt.year == now.year && dt.month == now.month && dt.day == now.day;
     if (sameDay) {
       final hh = dt.hour.toString().padLeft(2, '0');
       final mm = dt.minute.toString().padLeft(2, '0');
@@ -57,6 +59,7 @@ class ChatListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final last = chat.lastMessage;
+    final timeLabel = _timeLabel(chat.updatedAtMs);
 
     return InkWell(
       onTap: onTap,
@@ -85,14 +88,18 @@ class ChatListTile extends StatelessWidget {
                           chat.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Text(
-                        _timeLabel(chat.updatedAtMs),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: CFColors.textSecondary),
-                      ),
+                      if (timeLabel.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          timeLabel,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: CFColors.textSecondary),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -104,20 +111,29 @@ class ChatListTile extends StatelessWidget {
                           _preview(last),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: CFColors.textSecondary),
                         ),
                       ),
                       if (!chat.hiddenForMe && chat.unreadCount > 0) ...[
                         const SizedBox(width: 10),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: const BoxDecoration(
                             color: CFColors.primary,
-                            borderRadius: BorderRadius.all(Radius.circular(999)),
+                            borderRadius: BorderRadius.all(
+                              Radius.circular(999),
+                            ),
                           ),
                           child: Text(
-                            chat.unreadCount > 99 ? '99+' : '${chat.unreadCount}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            chat.unreadCount > 99
+                                ? '99+'
+                                : '${chat.unreadCount}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,
                                 ),

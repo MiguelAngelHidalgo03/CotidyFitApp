@@ -16,6 +16,7 @@ class TrainingRecommendationService {
   static TrainingRecommendation scoreWorkout({
     required UserProfile? profile,
     required Workout workout,
+    bool isPeriodActive = false,
   }) {
     if (profile == null) {
       return const TrainingRecommendation(
@@ -67,6 +68,11 @@ class TrainingRecommendationService {
     if (_matchesPreference(prefs, workout.sportCategory, workout.recommendedProfileTags)) {
       score += 1;
       reasons.add('coincide con tus preferencias deportivas');
+    }
+
+    if (isPeriodActive && _hasPeriodSupport(workout)) {
+      score += 3;
+      reasons.add('está pensada para días de regla');
     }
 
     return TrainingRecommendation(
@@ -172,6 +178,23 @@ class TrainingRecommendationService {
       if (tagSet.any((t) => t.contains(p) || p.contains(t))) return true;
     }
     return false;
+  }
+
+  static bool _hasPeriodSupport(Workout workout) {
+    if (workout.periodFriendly) return true;
+    final metadata = {
+      ...workout.periodSupportTags.map((e) => e.toLowerCase()),
+      ...workout.periodBenefits.map((e) => e.toLowerCase()),
+    };
+    return metadata.any(
+      (entry) =>
+          entry.contains('regla') ||
+          entry.contains('period') ||
+          entry.contains('menstru') ||
+          entry.contains('dolor') ||
+          entry.contains('hinch') ||
+          entry.contains('cramp'),
+    );
   }
 
   static String _toExplanation(List<String> reasons) {

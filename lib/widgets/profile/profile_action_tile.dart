@@ -11,6 +11,7 @@ class ProfileActionTile extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.enabled = true,
+    this.accentColor,
   });
 
   final IconData icon;
@@ -19,27 +20,34 @@ class ProfileActionTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool enabled;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
+    final accent = accentColor ?? context.cfPrimary;
+    final titleColor = enabled
+        ? (accentColor == null ? context.cfTextPrimary : accent)
+        : context.cfTextSecondary;
+    final trailingColor = enabled ? context.cfTextSecondary : context.cfBorder;
+
     return InkWell(
       onTap: enabled ? onTap : null,
       borderRadius: const BorderRadius.all(Radius.circular(18)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: CFColors.primary.withValues(alpha: enabled ? 0.10 : 0.06),
+                color: accent.withValues(alpha: enabled ? 0.14 : 0.08),
                 borderRadius: const BorderRadius.all(Radius.circular(14)),
-                border: Border.all(color: CFColors.softGray),
+                border: Border.all(color: context.cfBorder),
               ),
               child: Icon(
                 icon,
-                color: enabled ? CFColors.primary : CFColors.textSecondary,
+                color: enabled ? accent : context.cfTextSecondary,
               ),
             ),
             const SizedBox(width: 12),
@@ -50,27 +58,24 @@ class ProfileActionTile extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: enabled ? CFColors.textPrimary : CFColors.textSecondary,
-                        ),
+                      fontWeight: FontWeight.w900,
+                      color: titleColor,
+                    ),
                   ),
                   if (subtitle != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle!,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: CFColors.textSecondary,
-                          ),
+                        color: context.cfTextSecondary,
+                        height: 1.3,
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
-            trailing ??
-                Icon(
-                  Icons.chevron_right,
-                  color: enabled ? CFColors.textSecondary : CFColors.softGray,
-                ),
+            trailing ?? Icon(Icons.chevron_right, color: trailingColor),
           ],
         ),
       ),

@@ -283,9 +283,9 @@ class _CustomFoodTile extends StatelessWidget {
           IconButton(
             tooltip: 'Eliminar',
             onPressed: onDelete,
-            icon: const Icon(
+            icon: Icon(
               Icons.delete_outline,
-              color: CFColors.textSecondary,
+              color: context.cfTextSecondary,
             ),
           ),
         ],

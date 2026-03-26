@@ -28,6 +28,7 @@ class ProgressMetricsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -77,23 +78,28 @@ class ProgressMetricsGrid extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.10),
+                  color: context.cfPrimaryTint,
                   borderRadius: const BorderRadius.all(Radius.circular(16)),
+                  border: Border.all(color: context.cfPrimaryTintStrong),
                 ),
-                child: const Icon(Icons.restaurant_outlined, color: CFColors.primary),
+                child: Icon(Icons.restaurant_outlined, color: primary),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Nutrición cumplida', style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      'Nutrición cumplida',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       nutritionPercentLabel,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                        color: context.cfTextPrimary,
+                      ),
                     ),
                   ],
                 ),
@@ -113,6 +119,7 @@ class _MiniChartCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     final spots = <FlSpot>[];
     for (var i = 0; i < points.length; i++) {
       spots.add(FlSpot(i.toDouble(), points[i].value.toDouble()));
@@ -125,13 +132,13 @@ class _MiniChartCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.show_chart_outlined, size: 18, color: CFColors.primary),
+              Icon(Icons.show_chart_outlined, size: 18, color: primary),
               const SizedBox(width: 8),
               Text(
                 'CF semanal',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
             ],
           ),
@@ -150,11 +157,11 @@ class _MiniChartCard extends StatelessWidget {
                     isCurved: true,
                     spots: spots,
                     barWidth: 3,
-                    color: CFColors.primary,
+                    color: primary,
                     dotData: const FlDotData(show: false),
                     belowBarData: BarAreaData(
                       show: true,
-                      color: CFColors.primary.withValues(alpha: 0.10),
+                      color: context.cfPrimaryTint,
                     ),
                   ),
                 ],
@@ -182,25 +189,31 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return ProgressSectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: CFColors.primary),
+              Icon(icon, size: 18, color: primary),
               const SizedBox(width: 8),
-              Expanded(child: Text(title, style: Theme.of(context).textTheme.bodyMedium)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
             ],
           ),
           const Spacer(),
           Text(
             value,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: CFColors.textPrimary,
-                ),
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              color: context.cfTextPrimary,
+            ),
           ),
           const SizedBox(height: 4),
           Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
@@ -224,6 +237,7 @@ class _WeightCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     final latest = summary?.latest;
 
     return ProgressSectionCard(
@@ -232,13 +246,18 @@ class _WeightCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.monitor_weight_outlined, size: 18, color: CFColors.primary),
+              Icon(Icons.monitor_weight_outlined, size: 18, color: primary),
               const SizedBox(width: 8),
-              Expanded(child: Text('Peso', style: Theme.of(context).textTheme.bodyMedium)),
+              Expanded(
+                child: Text(
+                  'Peso',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
               IconButton(
                 onPressed: onAddWeight,
                 icon: const Icon(Icons.add_circle_outline),
-                color: CFColors.primary,
+                color: primary,
                 tooltip: 'Añadir peso',
               ),
             ],
@@ -247,14 +266,16 @@ class _WeightCard extends StatelessWidget {
           Text(
             latest == null ? '—' : latest.weight.toStringAsFixed(1),
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: CFColors.textPrimary,
-                ),
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              color: context.cfTextPrimary,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
-            latest == null ? 'sin datos' : '${_delta(summary?.diffFromPrevious)} kg vs último',
+            latest == null
+                ? 'sin datos'
+                : '${_delta(summary?.diffFromPrevious)} kg vs último',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],

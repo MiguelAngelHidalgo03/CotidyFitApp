@@ -194,6 +194,9 @@ class Workout {
   final List<String> contraindications;
   final List<String> medicalWarnings;
   final List<String> recommendedProfileTags;
+  final bool periodFriendly;
+  final List<String> periodSupportTags;
+  final List<String> periodBenefits;
 
   const Workout({
     required this.id,
@@ -211,6 +214,9 @@ class Workout {
     this.contraindications = const [],
     this.medicalWarnings = const [],
     this.recommendedProfileTags = const [],
+    this.periodFriendly = false,
+    this.periodSupportTags = const [],
+    this.periodBenefits = const [],
   });
 
   Set<MuscleGroup> get muscleGroups => {
@@ -224,5 +230,178 @@ class Workout {
     final durOk = f.durations.isEmpty || f.durations.any((d) => d.matchesMinutes(durationMinutes));
     final muscleOk = f.muscleGroups.isEmpty || exercises.any((e) => f.muscleGroups.contains(e.muscleGroup));
     return placeOk && goalOk && diffOk && durOk && muscleOk;
+  }
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'category': category,
+        'durationMinutes': durationMinutes,
+        'level': level,
+        'exercises': exercises.map((e) => e.toJson()).toList(),
+        'places': places.map((p) => p.name).toList(),
+        'goals': goals.map((g) => g.name).toList(),
+        'difficulty': difficulty.name,
+        'equipmentNeeded': equipmentNeeded,
+        'sportCategory': sportCategory,
+        'recommendedForGoals': recommendedForGoals,
+        'contraindications': contraindications,
+        'medicalWarnings': medicalWarnings,
+        'recommendedProfileTags': recommendedProfileTags,
+        'periodFriendly': periodFriendly,
+        'periodSupportTags': periodSupportTags,
+        'periodBenefits': periodBenefits,
+      };
+
+  static Workout? fromJson(Map<String, Object?> json) {
+    String s(Object? v, {String fallback = ''}) {
+      final raw = (v is String ? v : v?.toString())?.trim();
+      return (raw == null || raw.isEmpty) ? fallback : raw;
+    }
+
+    int i(Object? v, {int fallback = 0}) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      final raw = (v is String ? v : v?.toString())?.trim();
+      if (raw == null || raw.isEmpty) return fallback;
+      return int.tryParse(raw) ?? fallback;
+    }
+
+    List<String> sl(Object? v) {
+      if (v is! List) return const [];
+      return v
+          .map((e) => (e is String ? e : e?.toString())?.trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+
+    List<String> slFromKeys(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value is List) return sl(value);
+        final raw = (value is String ? value : value?.toString())?.trim();
+        if (raw == null || raw.isEmpty) continue;
+        return raw
+            .split('|')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      return const [];
+    }
+
+    bool readBool(List<String> keys, {bool fallback = false}) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value is bool) return value;
+        if (value is num) return value != 0;
+        final raw = (value is String ? value : value?.toString())?.trim().toLowerCase();
+        if (raw == null || raw.isEmpty) continue;
+        switch (raw) {
+          case 'true':
+          case '1':
+          case 'si':
+          case 'yes':
+            return true;
+          case 'false':
+          case '0':
+          case 'no':
+            return false;
+        }
+      }
+      return fallback;
+    }
+
+    T? enumFromName<T extends Enum>(List<T> values, Object? v) {
+      final raw = s(v);
+      if (raw.isEmpty) return null;
+      for (final e in values) {
+        if (e.name == raw) return e;
+      }
+      return null;
+    }
+
+    final id = s(json['id']);
+    final name = s(json['name']);
+    if (id.isEmpty || name.isEmpty) return null;
+
+    final category = s(json['category'], fallback: 'General');
+    final durationMinutes = i(json['durationMinutes'], fallback: 20);
+    final level = s(json['level'], fallback: 'Intermedio');
+
+    final exercisesRaw = json['exercises'];
+    final exercises = <Exercise>[];
+    if (exercisesRaw is List) {
+      for (final item in exercisesRaw) {
+        if (item is! Map) continue;
+        final map = item.map((k, v) => MapEntry(k.toString(), v));
+        final ex = Exercise.fromJson(map);
+        if (ex != null) exercises.add(ex);
+      }
+    }
+
+    final places = <WorkoutPlace>[];
+    final placesRaw = json['places'];
+    if (placesRaw is List) {
+      for (final item in placesRaw) {
+        final raw = s(item);
+        final parsed = enumFromName(WorkoutPlace.values, raw);
+        if (parsed != null) places.add(parsed);
+      }
+    }
+
+    final goals = <WorkoutGoal>[];
+    final goalsRaw = json['goals'];
+    if (goalsRaw is List) {
+      for (final item in goalsRaw) {
+        final raw = s(item);
+        final parsed = enumFromName(WorkoutGoal.values, raw);
+        if (parsed != null) goals.add(parsed);
+      }
+    }
+
+    final difficulty =
+        enumFromName(WorkoutDifficulty.values, json['difficulty']) ??
+            WorkoutDifficulty.moderado;
+
+    return Workout(
+      id: id,
+      name: name,
+      category: category,
+      durationMinutes: durationMinutes,
+      level: level,
+      exercises: exercises,
+      places: places,
+      goals: goals,
+      difficulty: difficulty,
+      equipmentNeeded: s(json['equipmentNeeded'], fallback: 'none'),
+      sportCategory: s(json['sportCategory']),
+      recommendedForGoals: sl(json['recommendedForGoals']),
+      contraindications: sl(json['contraindications']),
+      medicalWarnings: sl(json['medicalWarnings']),
+      recommendedProfileTags: sl(json['recommendedProfileTags']),
+      periodFriendly: readBool([
+        'periodFriendly',
+        'period_friendly',
+        'isPeriodFriendly',
+        'is_period_friendly',
+        'recommendedForPeriod',
+        'recommended_for_period',
+      ]),
+      periodSupportTags: slFromKeys([
+        'periodSupportTags',
+        'period_support_tags',
+        'periodTags',
+        'period_tags',
+        'womenCycleTags',
+        'women_cycle_tags',
+      ]),
+      periodBenefits: slFromKeys([
+        'periodBenefits',
+        'period_benefits',
+        'periodSupportBenefits',
+        'period_support_benefits',
+      ]),
+    );
   }
 }

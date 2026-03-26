@@ -26,32 +26,52 @@ class TrainingWeekOverviewHeader extends StatelessWidget {
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _Metric(
-                  icon: Icons.timer_outlined,
-                  label: 'Minutos planificados',
-                  value: '${summary.plannedMinutes} min',
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final useColumn = constraints.maxWidth < 280;
+              final compact = constraints.maxWidth < 360;
+              final plannedMinutes = _Metric(
+                icon: Icons.timer_outlined,
+                label: 'Minutos planificados',
+                value: '${summary.plannedMinutes} min',
+                compact: compact,
+              );
+              final activeDays = _Metric(
+                icon: Icons.calendar_today_outlined,
+                label: 'Días activos',
+                value: '${summary.activeDays}',
+                compact: compact,
+              );
+
+              if (useColumn) {
+                return Column(
+                  children: [
+                    plannedMinutes,
+                    const SizedBox(height: 12),
+                    activeDays,
+                  ],
+                );
+              }
+
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: plannedMinutes),
+                    const SizedBox(width: 12),
+                    Expanded(child: activeDays),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _Metric(
-                  icon: Icons.calendar_today_outlined,
-                  label: 'Días activos',
-                  value: '${summary.activeDays}',
-                ),
-              ),
-            ],
+              );
+            },
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.trending_up_outlined,
                 size: 18,
-                color: CFColors.primary,
+                color: context.cfPrimary,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -60,8 +80,8 @@ class TrainingWeekOverviewHeader extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: summary.weeklyProgress,
                     minHeight: 8,
-                    backgroundColor: CFColors.softGray,
-                    color: CFColors.primary,
+                    backgroundColor: context.cfBorder,
+                    color: context.cfPrimary,
                   ),
                 ),
               ),
@@ -79,38 +99,55 @@ class TrainingWeekOverviewHeader extends StatelessWidget {
 }
 
 class _Metric extends StatelessWidget {
-  const _Metric({required this.icon, required this.label, required this.value});
+  const _Metric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.compact = false,
+  });
 
   final IconData icon;
   final String label;
   final String value;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(compact ? 12 : 14),
       decoration: BoxDecoration(
-        color: CFColors.primary.withValues(alpha: 0.06),
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: CFColors.primary, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
-                ),
-              ],
+          Icon(icon, color: context.cfPrimary, size: compact ? 18 : 20),
+          SizedBox(height: compact ? 10 : 14),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: compact
+                ? Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.cfTextSecondary,
+                  )
+                : Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: context.cfTextSecondary,
+                  ),
+          ),
+          SizedBox(height: compact ? 6 : 8),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: context.cfTextPrimary,
             ),
           ),
         ],

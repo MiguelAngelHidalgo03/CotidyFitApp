@@ -7,6 +7,7 @@ class AchievementCatalogItem {
     required this.category,
     required this.conditionType,
     required this.conditionValue,
+    this.difficulty = '',
     this.createdAt,
   });
 
@@ -17,6 +18,9 @@ class AchievementCatalogItem {
   final String category;
   final String conditionType;
   final int conditionValue;
+  /// Optional: 'easy' | 'medium' | 'hard'.
+  /// If empty, the UI may fall back to a heuristic based on conditionValue.
+  final String difficulty;
   final DateTime? createdAt;
 
   factory AchievementCatalogItem.fromFirestore({
@@ -32,6 +36,7 @@ class AchievementCatalogItem {
       category: (data['category'] as String? ?? 'progreso').trim(),
       conditionType: (data['conditionType'] as String? ?? '').trim(),
       conditionValue: _asInt(data['conditionValue']) ?? 0,
+      difficulty: (data['difficulty'] as String? ?? '').trim(),
       createdAt: _asDateTime(created),
     );
   }
@@ -44,6 +49,7 @@ class AchievementCatalogItem {
       'category': category,
       'conditionType': conditionType,
       'conditionValue': conditionValue,
+      'difficulty': difficulty,
       'createdAt': createdAt,
     };
   }

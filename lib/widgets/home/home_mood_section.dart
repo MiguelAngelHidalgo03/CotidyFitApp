@@ -23,20 +23,33 @@ class HomeMoodSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(22)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
+        boxShadow: [
+          BoxShadow(
+            color: context.cfShadow,
+            blurRadius: context.cfIsDark ? 24 : 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('¿Cómo te sientes hoy?', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            '¿Cómo te sientes hoy?',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
           const SizedBox(height: 4),
           Text(
             'Puedes cambiarlo cuando quieras durante el día.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: CFColors.textSecondary,
+                  color: context.cfTextSecondary,
+                  height: 1.35,
                 ),
           ),
           const SizedBox(height: 12),
@@ -135,6 +148,7 @@ class _MoodRowState extends State<_MoodRow> {
             widget.title,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w800,
+              color: context.cfTextPrimary,
                 ),
           ),
         ),
@@ -154,17 +168,18 @@ class _MoodRowState extends State<_MoodRow> {
                         label: Center(child: Text(widget.options[i])),
                         selected: _selected == i,
                         showCheckmark: false,
-                        selectedColor: CFColors.primary.withValues(alpha: 0.18),
+                        selectedColor: context.cfPrimaryTint,
+                        backgroundColor: context.cfSoftSurface,
                         side: BorderSide(
                           color: _selected == i
-                              ? CFColors.primary.withValues(alpha: 0.55)
-                              : CFColors.softGray,
+                          ? context.cfPrimaryTintStrong
+                          : context.cfBorder,
                         ),
                         labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: _selected == i
-                                  ? CFColors.primary
-                                  : CFColors.textPrimary,
+                              ? context.cfPrimary
+                              : context.cfTextPrimary,
                             ),
                         onSelected: (_) {
                           setState(() => _selected = i);

@@ -13,6 +13,9 @@ class WeeklyProgramModel {
     this.contraindications = const [],
     this.medicalWarnings = const [],
     this.durationMinutes = 0,
+    this.periodFriendly = false,
+    this.periodSupportTags = const [],
+    this.periodBenefits = const [],
   });
 
   final String id;
@@ -30,9 +33,63 @@ class WeeklyProgramModel {
   final List<String> contraindications;
   final List<String> medicalWarnings;
   final int durationMinutes;
+  final bool periodFriendly;
+  final List<String> periodSupportTags;
+  final List<String> periodBenefits;
 
   /// Weeks -> 7 days (Mon..Sun) -> workoutId or null.
   final List<List<String?>> estructuraDias;
+
+  static List<Map<String, Object?>> _serializeWeekStructure(
+    List<List<String?>> weeks,
+  ) {
+    return [
+      for (var index = 0; index < weeks.length; index++)
+        () {
+          final week = weeks[index];
+          return {
+          'week': index + 1,
+          'day1': week.isNotEmpty ? week[0] : null,
+          'day2': week.length > 1 ? week[1] : null,
+          'day3': week.length > 2 ? week[2] : null,
+          'day4': week.length > 3 ? week[3] : null,
+          'day5': week.length > 4 ? week[4] : null,
+          'day6': week.length > 5 ? week[5] : null,
+          'day7': week.length > 6 ? week[6] : null,
+        };
+        }(),
+    ];
+  }
+
+  static List<String?>? _parseWeekStructureEntry(Object? raw) {
+    if (raw is List) {
+      final days = <String?>[];
+      for (final value in raw) {
+        days.add(value is String && value.trim().isNotEmpty ? value.trim() : null);
+      }
+      return days;
+    }
+
+    if (raw is Map) {
+      String? readDay(String key) {
+        final value = raw[key];
+        if (value is String && value.trim().isNotEmpty) return value.trim();
+        return null;
+      }
+
+      return <String?>[
+        readDay('day1'),
+        readDay('day2'),
+        readDay('day3'),
+        readDay('day4'),
+        readDay('day5'),
+        readDay('day6'),
+        readDay('day7'),
+      ];
+    }
+
+    return null;
+  }
 
   Map<String, Object?> toJson() {
     return {
@@ -48,10 +105,10 @@ class WeeklyProgramModel {
       'contraindications': contraindications,
       'medicalWarnings': medicalWarnings,
       'durationMinutes': durationMinutes,
-      'estructuraDias': [
-        for (final week in estructuraDias)
-          [for (final day in week) day],
-      ],
+      'periodFriendly': periodFriendly,
+      'periodSupportTags': periodSupportTags,
+      'periodBenefits': periodBenefits,
+      'estructuraDias': _serializeWeekStructure(estructuraDias),
     };
   }
 
@@ -82,23 +139,49 @@ class WeeklyProgramModel {
 
     List<String> parseStringList(String key, {String? snake}) {
       final raw = json[key] ?? (snake == null ? null : json[snake]);
-      if (raw is! List) return const [];
-      final out = <String>[];
-      for (final e in raw) {
-        if (e is String && e.trim().isNotEmpty) out.add(e.trim());
+      if (raw is List) {
+        final out = <String>[];
+        for (final e in raw) {
+          if (e is String && e.trim().isNotEmpty) out.add(e.trim());
+        }
+        return out;
       }
-      return out;
+      if (raw is String && raw.trim().isNotEmpty) {
+        return raw
+            .split('|')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      return const [];
+    }
+
+    bool parseBool(String key, {String? snake, bool fallback = false}) {
+      final raw = json[key] ?? (snake == null ? null : json[snake]);
+      if (raw is bool) return raw;
+      if (raw is num) return raw != 0;
+      if (raw is String) {
+        switch (raw.trim().toLowerCase()) {
+          case 'true':
+          case '1':
+          case 'si':
+          case 'yes':
+            return true;
+          case 'false':
+          case '0':
+          case 'no':
+            return false;
+        }
+      }
+      return fallback;
     }
 
     final estructuraRaw = json['estructuraDias'];
     final estructuraDias = <List<String?>>[];
     if (estructuraRaw is List) {
       for (final w in estructuraRaw) {
-        if (w is! List) continue;
-        final days = <String?>[];
-        for (final d in w) {
-          days.add(d is String && d.trim().isNotEmpty ? d : null);
-        }
+        final days = _parseWeekStructureEntry(w);
+        if (days == null) continue;
         while (days.length < 7) {
           days.add(null);
         }
@@ -137,6 +220,9 @@ class WeeklyProgramModel {
       contraindications: parseStringList('contraindications'),
       medicalWarnings: parseStringList('medicalWarnings', snake: 'medical_warnings'),
       durationMinutes: durationMinutes < 0 ? 0 : durationMinutes,
+      periodFriendly: parseBool('periodFriendly', snake: 'period_friendly'),
+      periodSupportTags: parseStringList('periodSupportTags', snake: 'period_support_tags'),
+      periodBenefits: parseStringList('periodBenefits', snake: 'period_benefits'),
     );
   }
 }

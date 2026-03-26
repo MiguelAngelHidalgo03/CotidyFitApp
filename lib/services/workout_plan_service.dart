@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,6 +11,9 @@ import '../models/workout_plan.dart';
 class WorkoutPlanService {
   static const _kPlansByWeekKey = 'cf_workout_plans_by_week_json';
   static const _kCloudMigrationPrefix = 'cf_workout_plans_cloud_migrated_v1_';
+  static const _kCloudFetchMarkerPrefix =
+      'cf_workout_plans_cloud_last_fetch_ms_v1_';
+  static const _kCloudFetchTtl = Duration(hours: 6);
 
   final FirebaseFirestore? _dbOverride;
   final FirebaseAuth? _authOverride;
@@ -30,25 +34,67 @@ class WorkoutPlanService {
 
   Future<WeekPlan?> getPlanForWeekKey(String weekStartKey) async {
     final uid = _uid;
+    final local = await _getPlanFromLocal(weekStartKey);
     if (uid != null) {
-      await _migrateLocalPlansToCloudIfNeeded(uid);
-      final snap = await _plansColForUid(uid).doc(weekStartKey).get();
-      if (snap.exists) {
-        final data = snap.data();
-        if (data != null) {
-          final map = <String, Object?>{};
-          for (final e in data.entries) {
-            map[e.key] = e.value;
-          }
-          final parsed = WeekPlan.fromJson(map);
-          if (parsed != null) {
-            await _cachePlanLocally(parsed);
-            return parsed;
-          }
-        }
+      unawaited(_migrateLocalPlansToCloudIfNeeded(uid));
+
+      if (local != null) {
+        unawaited(_refreshPlanFromCloudIfStale(uid: uid, weekKey: weekStartKey));
+        return local;
+      }
+
+      final cloud = await _getPlanFromCloud(uid: uid, weekKey: weekStartKey);
+      if (cloud != null) {
+        await _cachePlanLocally(cloud);
+        return cloud;
       }
     }
 
+    return local;
+  }
+
+  Future<WeekPlan?> _getPlanFromCloud({
+    required String uid,
+    required String weekKey,
+  }) async {
+    final snap = await _plansColForUid(uid).doc(weekKey).get();
+    if (!snap.exists) return null;
+
+    final data = snap.data();
+    if (data == null) return null;
+
+    final map = <String, Object?>{};
+    for (final e in data.entries) {
+      map[e.key] = e.value;
+    }
+    return WeekPlan.fromJson(map);
+  }
+
+  Future<void> _refreshPlanFromCloudIfStale({
+    required String uid,
+    required String weekKey,
+  }) async {
+    try {
+      final p = await _prefs();
+      final markerKey = '$_kCloudFetchMarkerPrefix${uid}_$weekKey';
+      final last = p.getInt(markerKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - last >= 0 && now - last < _kCloudFetchTtl.inMilliseconds) {
+        return;
+      }
+
+      final plan = await _getPlanFromCloud(uid: uid, weekKey: weekKey);
+      if (plan != null) {
+        await _cachePlanLocally(plan);
+      }
+
+      await p.setInt(markerKey, now);
+    } catch (_) {
+      // best-effort
+    }
+  }
+
+  Future<WeekPlan?> _getPlanFromLocal(String weekStartKey) async {
     final map = await _getAllPlans();
     final raw = map[weekStartKey];
     if (raw == null || raw.trim().isEmpty) return null;

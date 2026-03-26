@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/user_profile.dart';
+import 'account_local_data_service.dart';
 import 'firestore_service.dart';
 import 'profile_service.dart';
 import 'user_service.dart';
@@ -11,13 +14,14 @@ class UserRepository {
     FirestoreService? firestore,
     ProfileService? profile,
     UserService? userService,
-  })  : _firestore = firestore ?? FirestoreService(),
-        _profile = profile ?? ProfileService(),
-        _userService = userService ?? UserService();
+  }) : _firestore = firestore ?? FirestoreService(),
+       _profile = profile ?? ProfileService(),
+       _userService = userService ?? UserService();
 
   final FirestoreService _firestore;
   final ProfileService _profile;
   final UserService _userService;
+  final AccountLocalDataService _localAccountData = AccountLocalDataService();
 
   Future<UserProfile> getOrCreateLocalProfile() {
     return _profile.getOrCreateProfile(fallbackGoal: 'Salud');
@@ -33,9 +37,10 @@ class UserRepository {
   /// - Reads `users/{uid}` and uses its `onboardingCompleted` as the source of truth.
   /// - Ensures `displayName` is present (email prefix fallback) and persists it.
   /// - If Firestore has `profileData`, it is saved locally.
-  /// - If Firestore doc is missing, it is created from local profile.
+  /// - If Firestore doc is missing, it is created from a fresh default profile.
   Future<bool> bootstrapSignedInUser(User user) async {
     final uid = user.uid;
+    await _localAccountData.resetIfAccountChanged(uid);
 
     final email = (user.email ?? '').trim();
     final derivedName = _deriveDisplayName(
@@ -44,7 +49,8 @@ class UserRepository {
     );
 
     // Ensure FirebaseAuth displayName is set (best-effort).
-    if ((user.displayName ?? '').trim().isEmpty && derivedName.trim().isNotEmpty) {
+    if ((user.displayName ?? '').trim().isEmpty &&
+        derivedName.trim().isNotEmpty) {
       try {
         await user.updateDisplayName(derivedName);
         await user.reload();
@@ -56,19 +62,18 @@ class UserRepository {
     final docRef = _firestore.userDoc(uid);
     final snap = await docRef.get();
 
-    // Ensure username/tag exists (best-effort) without overwriting.
-    await ensureUniqueTagForUser(user);
-
-    // Best-effort: keep a public profile doc for Community (no sensitive fields).
-    await _upsertPublicProfile(uid: uid, displayName: derivedName);
+    // Non-critical identity/community sync should not block first paint.
+    unawaited(_ensureStartupMetadata(user, derivedName));
 
     if (!snap.exists) {
-      final local = await getOrCreateLocalProfile();
-      final normalized = _applyDisplayNameToProfile(local, derivedName);
+      final normalized = _applyDisplayNameToProfile(
+        const UserProfile(goal: 'Salud'),
+        derivedName,
+      );
       await saveLocalProfile(normalized);
 
-      await docRef.set(
-        {
+      unawaited(
+        docRef.set({
           if (email.isNotEmpty) 'email': email,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -76,8 +81,7 @@ class UserRepository {
           'isPremium': normalized.isPremium,
           'profileData': normalized.toJson(),
           'healthConditions': normalized.healthConditions,
-        },
-        SetOptions(merge: true),
+        }, SetOptions(merge: true)),
       );
 
       return normalized.onboardingCompleted;
@@ -91,7 +95,9 @@ class UserRepository {
     }
 
     final onboardingCompletedRaw = data['onboardingCompleted'];
-    final onboardingCompleted = onboardingCompletedRaw is bool ? onboardingCompletedRaw : false;
+    final onboardingCompleted = onboardingCompletedRaw is bool
+        ? onboardingCompletedRaw
+        : false;
 
     // Prefer remote profileData if present.
     final profileDataRaw = data['profileData'];
@@ -115,20 +121,38 @@ class UserRepository {
     // Keep local in sync.
     await saveLocalProfile(normalized);
 
-    // Best-effort: persist updated displayName/profile + timestamps.
-    await docRef.set(
-      {
+    // Best-effort: persist updated displayName/profile + timestamps without
+    // blocking app startup.
+    unawaited(
+      docRef.set({
         if (email.isNotEmpty) 'email': email,
         'updatedAt': FieldValue.serverTimestamp(),
         'onboardingCompleted': normalized.onboardingCompleted,
         'isPremium': normalized.isPremium,
         'profileData': normalized.toJson(),
         'healthConditions': normalized.healthConditions,
-      },
-      SetOptions(merge: true),
+      }, SetOptions(merge: true)),
     );
 
     return onboardingCompleted;
+  }
+
+  Future<void> _ensureStartupMetadata(User user, String derivedName) async {
+    try {
+      await ensureUniqueTagForUser(user);
+    } catch (_) {
+      // best-effort
+    }
+
+    try {
+      await _upsertPublicProfile(uid: user.uid, displayName: derivedName);
+    } catch (_) {
+      // best-effort
+    }
+  }
+
+  Future<void> resetLocalAccountData() async {
+    await _localAccountData.clearAllLocalAccountData();
   }
 
   /// Ensures the signed-in user has `username`, `tag` and `uniqueTag`.
@@ -147,10 +171,7 @@ class UserRepository {
   /// Updates the tag for the current username, validating uniqueness.
   ///
   /// This keeps username stable and only changes the 6-digit tag.
-  Future<void> updateTag({
-    required String uid,
-    required String newTag,
-  }) async {
+  Future<void> updateTag({required String uid, required String newTag}) async {
     await _userService.updateTag(uid: uid, newTag: newTag);
   }
 
@@ -171,14 +192,11 @@ class UserRepository {
     if (cleaned.isEmpty) return;
 
     try {
-      await FirebaseFirestore.instance.collection('user_public').doc(uid).set(
-        {
-          'displayName': cleaned,
-          'visible': true,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      await FirebaseFirestore.instance.collection('user_public').doc(uid).set({
+        'displayName': cleaned,
+        'visible': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     } catch (_) {
       // best-effort
     }
@@ -195,7 +213,10 @@ class UserRepository {
     return email.substring(0, at).trim();
   }
 
-  UserProfile _applyDisplayNameToProfile(UserProfile profile, String displayName) {
+  UserProfile _applyDisplayNameToProfile(
+    UserProfile profile,
+    String displayName,
+  ) {
     final name = displayName.trim();
     if (name.isEmpty) return profile;
 

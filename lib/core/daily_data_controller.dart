@@ -6,12 +6,14 @@ import '../models/daily_data_model.dart';
 import '../services/workout_history_service.dart';
 import '../services/achievements_service.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/daily_data_service.dart';
 import '../services/firestore_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/my_day_repository.dart';
 import '../services/my_day_repository_factory.dart';
 import '../services/health_service.dart';
+import '../services/offline_sync_queue_service.dart';
 import '../services/workout_session_service.dart';
 import '../utils/date_utils.dart';
 
@@ -28,15 +30,15 @@ class DailyDataController extends ChangeNotifier {
     FirestoreService? firestore,
     HealthService? health,
     AchievementsService? achievements,
-  })  : _dailyData = dailyData ?? DailyDataService(),
-        _storage = storage ?? LocalStorageService(),
-        _workoutService = workoutService ?? WorkoutSessionService(),
-        _myDayService = myDayService ?? MyDayRepositoryFactory.create(),
-      _workoutHistory = WorkoutHistoryService(),
-      _auth = auth,
-      _firestore = firestore,
-      _health = health,
-      _achievements = achievements ?? AchievementsService();
+  }) : _dailyData = dailyData ?? DailyDataService(),
+       _storage = storage ?? LocalStorageService(),
+       _workoutService = workoutService ?? WorkoutSessionService(),
+       _myDayService = myDayService ?? MyDayRepositoryFactory.create(),
+       _workoutHistory = WorkoutHistoryService(),
+       _auth = auth,
+       _firestore = firestore,
+       _health = health,
+       _achievements = achievements ?? AchievementsService();
 
   final DailyDataService _dailyData;
   final LocalStorageService _storage;
@@ -60,7 +62,9 @@ class DailyDataController extends ChangeNotifier {
   bool _completedToday = false;
   bool get completedToday => _completedToday;
 
-  DailyDataModel _todayData = DailyDataModel.empty(DateUtilsCF.toKey(DateTime.now()));
+  DailyDataModel _todayData = DailyDataModel.empty(
+    DateUtilsCF.toKey(DateTime.now()),
+  );
   DailyDataModel get todayData => _todayData;
 
   bool _workoutCompleted = false;
@@ -159,7 +163,9 @@ class DailyDataController extends ChangeNotifier {
         _todayData = DailyDataModel.empty(_todayKey);
       }
 
-      _workoutCompleted = await _workoutService.isWorkoutCompletedForDate(_todayKey);
+      _workoutCompleted = await _workoutService.isWorkoutCompletedForDate(
+        _todayKey,
+      );
 
       final myDayEntries = await _myDayService.getForDate(DateTime.now());
       final mealTypes = <Object?>{};
@@ -189,9 +195,10 @@ class DailyDataController extends ChangeNotifier {
 
     try {
       final health = _health ??= HealthService();
-      final synced = await health
-          .syncTodaySteps()
-          .timeout(const Duration(seconds: 4), onTimeout: () => null);
+      final synced = await health.syncTodaySteps().timeout(
+        const Duration(seconds: 4),
+        onTimeout: () => null,
+      );
 
       if (synced == null) return;
       if (synced.dateKey != _todayKey) return;
@@ -227,6 +234,17 @@ class DailyDataController extends ChangeNotifier {
 
     final fs = _firestore ??= FirestoreService();
 
+    if (!ConnectivityService.instance.isOnline) {
+      await OfflineSyncQueueService.instance.queueDailySync(
+        uid: user.uid,
+        data: _todayData,
+        cfScore: displayedCfIndex,
+        workoutCompleted: _workoutCompleted,
+        mealsLoggedCount: _mealsLoggedCount,
+      );
+      return;
+    }
+
     try {
       await fs.saveDailyDataFromModel(
         uid: user.uid,
@@ -245,7 +263,13 @@ class DailyDataController extends ChangeNotifier {
         cfIndex: displayedCfIndex,
       );
     } catch (_) {
-      // Ignore transient sync failures.
+      await OfflineSyncQueueService.instance.queueDailySync(
+        uid: user.uid,
+        data: _todayData,
+        cfScore: displayedCfIndex,
+        workoutCompleted: _workoutCompleted,
+        mealsLoggedCount: _mealsLoggedCount,
+      );
     }
   }
 
@@ -376,7 +400,8 @@ class DailyDataController extends ChangeNotifier {
     final shownKey = p.getString(_kMoodPromptShownDateKey);
     if (shownKey == _todayKey) return false;
 
-    final hasMood = _todayData.energy != null &&
+    final hasMood =
+        _todayData.energy != null &&
         _todayData.mood != null &&
         _todayData.stress != null &&
         _todayData.sleep != null;
@@ -431,13 +456,29 @@ class DailyDataController extends ChangeNotifier {
     if (user == null) return;
 
     final fs = _firestore ??= FirestoreService();
+
+    if (!ConnectivityService.instance.isOnline) {
+      await OfflineSyncQueueService.instance.queueMeditationSync(
+        uid: user.uid,
+        dateKey: _todayKey,
+        meditationMinutes: _todayData.meditationMinutes,
+      );
+      return;
+    }
+
     try {
       await fs.saveMeditationMinutes(
         uid: user.uid,
         dateKey: _todayKey,
         meditationMinutes: _todayData.meditationMinutes,
       );
-    } catch (_) {}
+    } catch (_) {
+      await OfflineSyncQueueService.instance.queueMeditationSync(
+        uid: user.uid,
+        dateKey: _todayKey,
+        meditationMinutes: _todayData.meditationMinutes,
+      );
+    }
   }
 
   Future<void> _syncDailyMoodToFirestore() async {
@@ -468,16 +509,43 @@ class DailyDataController extends ChangeNotifier {
     }
 
     final fs = _firestore ??= FirestoreService();
+
+    final energia = mapEnergy(_todayData.energy);
+    final animo = mapLevel(_todayData.mood);
+    final estres = mapLevel(_todayData.stress);
+    final sueno = mapSleep(_todayData.sleep);
+
+    if (!ConnectivityService.instance.isOnline) {
+      await OfflineSyncQueueService.instance.queueMoodSync(
+        uid: user.uid,
+        dateKey: _todayKey,
+        energia: energia,
+        animo: animo,
+        estres: estres,
+        sueno: sueno,
+      );
+      return;
+    }
+
     try {
       await fs.saveDailyMood(
         uid: user.uid,
         dateKey: _todayKey,
-        energia: mapEnergy(_todayData.energy),
-        animo: mapLevel(_todayData.mood),
-        estres: mapLevel(_todayData.stress),
-        sueno: mapSleep(_todayData.sleep),
+        energia: energia,
+        animo: animo,
+        estres: estres,
+        sueno: sueno,
       );
-    } catch (_) {}
+    } catch (_) {
+      await OfflineSyncQueueService.instance.queueMoodSync(
+        uid: user.uid,
+        dateKey: _todayKey,
+        energia: energia,
+        animo: animo,
+        estres: estres,
+        sueno: sueno,
+      );
+    }
   }
 
   Future<void> _checkAchievementsBestEffort() async {

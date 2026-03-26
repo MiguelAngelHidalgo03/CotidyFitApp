@@ -3,20 +3,33 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' show User;
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/daily_data_controller.dart';
 import '../core/home_navigation.dart';
 import '../core/theme.dart';
+import '../models/workout.dart';
+import '../models/user_profile.dart';
 import '../services/auth_service.dart';
+import '../services/app_permissions_service.dart';
+import '../services/health_service.dart';
 import '../services/home_dashboard_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/location_permission_service.dart';
 import '../services/profile_service.dart';
+import '../services/task_reminder_service.dart';
+import '../services/training_recommendation_service.dart';
+import '../services/workout_service.dart';
 import '../utils/date_utils.dart';
+import '../widgets/common/inline_status_banner.dart';
+import '../widgets/home/home_women_cycle_section.dart';
+import 'workout_detail_screen.dart';
 
 class UserData {
   final String name;
@@ -108,12 +121,16 @@ final UserData initialUserData = UserData(
     'target': 100,
   },
   weeklyChallenge: {
+    'id': '',
+    'weekId': '',
     'title': 'Sin reto activo',
     'description': 'No hay reto activo. ¡Pronto uno nuevo!',
     'userProgress': 0,
     'target': 1,
-    'communityProgress': 0,
+    'communityCompletionPct': 0,
     'reward': '+0 CF',
+    'rewardCfBonus': 0,
+    'completed': false,
     'isActive': false,
   },
   habits: const [],
@@ -128,15 +145,22 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with AutomaticKeepAliveClientMixin<HomeScreen>, WidgetsBindingObserver {
   final _auth = AuthService();
+  final _appPermissions = AppPermissionsService();
   final _profile = ProfileService();
   final _dashboard = HomeDashboardService();
   final _controller = DailyDataController();
+  final _health = HealthService();
   final _storage = LocalStorageService();
+  final _workouts = WorkoutService();
 
   UserData _userData = initialUserData;
+  UserProfile? _profileModel;
   bool _loading = true;
+  bool _loadingPrimaryMetrics = true;
+  bool _loadingCollections = true;
   bool _suggestionVisible = false;
   List<HomeDayStat> _weekDays = const [];
   late final PageController _suggestionPageController;
@@ -149,10 +173,22 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _windKmh;
   DateTime _clockNow = DateTime.now();
   Timer? _clockTimer;
+  Timer? _clockStartTimer;
   Timer? _environmentTimer;
   int _weeklyHabitsCompleted = 0;
   int _weeklyHabitActiveDays = 0;
   Map<String, dynamic>? _todayMoodEntry;
+  bool _moodAutoPromptScheduled = false;
+  bool _moodAutoPromptInProgress = false;
+  String? _statusMessage;
+  List<int> _cfSeries30Cache = const [];
+  List<int> _stepsSeries30Cache = const [];
+  AppPermissionStatus _stepsPermissionStatusCache =
+      AppPermissionStatus.notRequested;
+  Future<void>? _dialogMetricsPrefetchFuture;
+
+  @override
+  bool get wantKeepAlive => true;
 
   static const _difficultyToPoints = <String, int>{
     'Fácil': 5,
@@ -246,80 +282,532 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _suggestionPageController = PageController(viewportFraction: 0.93);
     _startClockTicker();
-    _startEnvironmentTicker();
-    _loadRealData();
-    _refreshEnvironmentInfo();
-    // One-shot retry: if the user just granted location permission on startup,
-    // update climate/location shortly after without waiting 15 minutes.
-    Future<void>.delayed(const Duration(seconds: 10), () {
-      if (!mounted) return;
+    if (!_isRunningWidgetTest) {
+      _startEnvironmentTicker();
+    }
+    _bootstrap();
+    if (!_isRunningWidgetTest) {
       _refreshEnvironmentInfo();
-    });
+      // One-shot retry: if the user just granted location permission on startup,
+      // update climate/location shortly after without waiting 15 minutes.
+      Future<void>.delayed(const Duration(seconds: 10), () {
+        if (!mounted) return;
+        _refreshEnvironmentInfo();
+      });
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
+    _clockStartTimer?.cancel();
     _environmentTimer?.cancel();
     _suggestionPageController.dispose();
     _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _loadRealData() async {
-    setState(() => _loading = true);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+
+    _startClockTicker();
+    if (!_isRunningWidgetTest) {
+      unawaited(_refreshEnvironmentInfo());
+    }
+
+    final todayKey = DateUtilsCF.toKey(DateTime.now());
+    if (todayKey != _controller.todayKey) {
+      unawaited(_loadRealData(withLoader: false, allowMoodAutoPrompt: true));
+    }
+  }
+
+  static const _kHomeCacheKey = 'cf_home_cache_v1';
+
+  bool get _hasVisibleContent {
+    if (_profileModel != null) return true;
+    if (_weekDays.isNotEmpty) return true;
+    if (_userData.habits.isNotEmpty || _userData.todos.isNotEmpty) return true;
+    if (_userData.name != initialUserData.name) return true;
+    if (_userData.dailyStreak != initialUserData.dailyStreak) return true;
+    if ((_userData.stepsCount['current'] ?? 0) > 0) return true;
+    return false;
+  }
+
+  void _bootstrap() {
+    unawaited(() async {
+      final restored = await _restoreHomeCache();
+      await _loadRealData(withLoader: !restored, allowMoodAutoPrompt: true);
+    }());
+  }
+
+  void _scheduleMoodAutoPrompt() {
+    if (!mounted || _moodAutoPromptScheduled || _moodAutoPromptInProgress) {
+      return;
+    }
+
+    _moodAutoPromptScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _moodAutoPromptScheduled = false;
+      if (!mounted) return;
+      unawaited(_maybeAutoOpenMoodCheck());
+    });
+  }
+
+  Future<void> _maybeAutoOpenMoodCheck() async {
+    if (!mounted ||
+        _loading ||
+        _loadingCollections ||
+        _moodAutoPromptInProgress ||
+        _isRunningWidgetTest ||
+        _userData.moodRegisteredToday) {
+      return;
+    }
+
+    final shouldPrompt = await _controller.shouldPromptMoodToday();
+    if (!shouldPrompt || !mounted || _userData.moodRegisteredToday) return;
+
+    _moodAutoPromptInProgress = true;
+    try {
+      final nav = HomeNavigation.maybeOf(context);
+      nav?.goToTab(2);
+
+      await _controller.markMoodPromptShownToday();
+      if (!mounted) return;
+
+      final nextFrame = Completer<void>();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!nextFrame.isCompleted) {
+          nextFrame.complete();
+        }
+      });
+      await nextFrame.future;
+      if (!mounted) return;
+
+      await _showMoodCheckModal();
+    } finally {
+      _moodAutoPromptInProgress = false;
+    }
+  }
+
+  Future<bool> _restoreHomeCache() async {
+    if (_isRunningWidgetTest) return false;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kHomeCacheKey);
+      if (raw == null || raw.trim().isEmpty) return false;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return false;
+
+      Map<String, Object?> mapOf(Object? rawMap) {
+        if (rawMap is! Map) return const {};
+        final out = <String, Object?>{};
+        for (final e in rawMap.entries) {
+          final k = e.key;
+          if (k is String) out[k] = e.value;
+        }
+        return out;
+      }
+
+      List<Map<String, dynamic>> listOfMaps(Object? rawList) {
+        if (rawList is! List) return const [];
+        final out = <Map<String, dynamic>>[];
+        for (final item in rawList) {
+          if (item is! Map) continue;
+          final m = <String, dynamic>{};
+          for (final e in item.entries) {
+            final k = e.key;
+            if (k is String) m[k] = e.value;
+          }
+          out.add(m);
+        }
+        return out;
+      }
+
+      final userDataRaw = decoded['userData'];
+      if (userDataRaw is! Map) return false;
+      final userDataMap = mapOf(userDataRaw);
+
+      final todos = listOfMaps(userDataMap['todos'])
+          .map((t) {
+            final next = Map<String, dynamic>.from(t);
+            final rawDue = next['dueDateValue'];
+            if (rawDue is String) {
+              final parsed = DateTime.tryParse(rawDue);
+              if (parsed != null) next['dueDateValue'] = parsed;
+            }
+            return next;
+          })
+          .toList(growable: false);
+
+      final waterMap = mapOf(userDataMap['waterIntake']);
+      final stepsMap = mapOf(userDataMap['stepsCount']);
+
+      final restoredUserData = UserData(
+        name: (userDataMap['name'] as String?) ?? _userData.name,
+        currentCFIndex: _asInt(
+          userDataMap['currentCFIndex'],
+          fallback: _userData.currentCFIndex,
+        ),
+        dailyStreak: _asInt(
+          userDataMap['dailyStreak'],
+          fallback: _userData.dailyStreak,
+        ),
+        weeklyStreak: _asInt(
+          userDataMap['weeklyStreak'],
+          fallback: _userData.weeklyStreak,
+        ),
+        moodRegisteredToday: userDataMap['moodRegisteredToday'] == true,
+        currentMoodIcon:
+            (userDataMap['currentMoodIcon'] as String?) ??
+            _userData.currentMoodIcon,
+        waterIntake: {
+          'current': _asInt(
+            waterMap['current'],
+            fallback: _userData.waterIntake['current'] ?? 0,
+          ),
+          'target': _asInt(
+            waterMap['target'],
+            fallback: _userData.waterIntake['target'] ?? 2000,
+          ),
+        },
+        stepsCount: {
+          'current': _asInt(
+            stepsMap['current'],
+            fallback: _userData.stepsCount['current'] ?? 0,
+          ),
+          'target': _asInt(
+            stepsMap['target'],
+            fallback: _userData.stepsCount['target'] ?? 8000,
+          ),
+        },
+        dailyGoal: Map<String, dynamic>.from(mapOf(userDataMap['dailyGoal'])),
+        weeklyGoal: Map<String, dynamic>.from(mapOf(userDataMap['weeklyGoal'])),
+        weeklyChallenge: Map<String, dynamic>.from(
+          mapOf(userDataMap['weeklyChallenge']),
+        ),
+        habits: listOfMaps(userDataMap['habits']),
+        todos: todos,
+        currentTimeOfDay:
+            (userDataMap['currentTimeOfDay'] as String?) ??
+            _userData.currentTimeOfDay,
+      );
+
+      final weekDaysRaw = decoded['weekDays'];
+      final restoredWeekDays = <HomeDayStat>[];
+      if (weekDaysRaw is List) {
+        for (final item in weekDaysRaw) {
+          final m = mapOf(item);
+          final dateKey = (m['dateKey'] as String?) ?? '';
+          if (dateKey.isEmpty) continue;
+          restoredWeekDays.add(
+            HomeDayStat(
+              dateKey: dateKey,
+              dayLabel: (m['dayLabel'] as String?) ?? '',
+              completed: m['completed'] == true,
+              cfScore: _asInt(m['cfScore'], fallback: 0),
+              steps: _asInt(m['steps'], fallback: 0),
+            ),
+          );
+        }
+      }
+
+      final profile = await _profile.getOrCreateProfile();
+      if (!mounted) return false;
+
+      setState(() {
+        _userData = restoredUserData;
+        _weekDays = restoredWeekDays;
+        _weeklyHabitsCompleted = _asInt(
+          decoded['weeklyHabitsCompleted'],
+          fallback: _weeklyHabitsCompleted,
+        );
+        _weeklyHabitActiveDays = _asInt(
+          decoded['weeklyHabitActiveDays'],
+          fallback: _weeklyHabitActiveDays,
+        );
+        _cityLabel = (decoded['cityLabel'] as String?) ?? _cityLabel;
+        _tempLabel = (decoded['tempLabel'] as String?) ?? _tempLabel;
+        _weatherEmoji = (decoded['weatherEmoji'] as String?) ?? _weatherEmoji;
+        _weatherCode = _asInt(decoded['weatherCode'], fallback: _weatherCode);
+        _tempC = decoded['tempC'] is num
+            ? (decoded['tempC'] as num).round()
+            : _tempC;
+        _windKmh = decoded['windKmh'] is num
+            ? (decoded['windKmh'] as num).round()
+            : _windKmh;
+        _suggestionVisible = true;
+        _profileModel = profile;
+        _loading = false;
+        _loadingPrimaryMetrics = false;
+        _loadingCollections = true;
+        _statusMessage = null;
+      });
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _persistHomeCache() async {
+    if (_isRunningWidgetTest) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final u = _userData;
+
+      final todos = u.todos
+          .map((t) {
+            final next = Map<String, dynamic>.from(t);
+            final rawDue = next['dueDateValue'];
+            if (rawDue is DateTime) {
+              next['dueDateValue'] = rawDue.toIso8601String();
+            }
+            return next;
+          })
+          .toList(growable: false);
+
+      final snapshot = <String, Object?>{
+        'v': 1,
+        'savedAt': DateTime.now().toIso8601String(),
+        'userData': <String, Object?>{
+          'name': u.name,
+          'currentCFIndex': u.currentCFIndex,
+          'dailyStreak': u.dailyStreak,
+          'weeklyStreak': u.weeklyStreak,
+          'moodRegisteredToday': u.moodRegisteredToday,
+          'currentMoodIcon': u.currentMoodIcon,
+          'waterIntake': u.waterIntake,
+          'stepsCount': u.stepsCount,
+          'dailyGoal': u.dailyGoal,
+          'weeklyGoal': u.weeklyGoal,
+          'weeklyChallenge': u.weeklyChallenge,
+          'habits': u.habits,
+          'todos': todos,
+          'currentTimeOfDay': u.currentTimeOfDay,
+        },
+        'weekDays': [
+          for (final d in _weekDays)
+            <String, Object?>{
+              'dateKey': d.dateKey,
+              'dayLabel': d.dayLabel,
+              'completed': d.completed,
+              'cfScore': d.cfScore,
+              'steps': d.steps,
+            },
+        ],
+        'weeklyHabitsCompleted': _weeklyHabitsCompleted,
+        'weeklyHabitActiveDays': _weeklyHabitActiveDays,
+        'cityLabel': _cityLabel,
+        'tempLabel': _tempLabel,
+        'weatherEmoji': _weatherEmoji,
+        'weatherCode': _weatherCode,
+        'tempC': _tempC,
+        'windKmh': _windKmh,
+      };
+
+      await prefs.setString(_kHomeCacheKey, jsonEncode(snapshot));
+    } catch (_) {
+      // Ignore cache failures.
+    }
+  }
+
+  List<int> _fallbackStepSeries30() {
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final todayKey = DateUtilsCF.toKey(today);
+    final byKey = <String, int>{
+      for (final day in _weekDays) day.dateKey: day.steps,
+    };
+    final todaySteps = _userData.stepsCount['current'] ?? 0;
+
+    return List<int>.generate(30, (index) {
+      final day = today.subtract(Duration(days: 29 - index));
+      final key = DateUtilsCF.toKey(day);
+      if (key == todayKey) {
+        return todaySteps > 0 ? todaySteps : (byKey[key] ?? 0);
+      }
+      return byKey[key] ?? 0;
+    });
+  }
+
+  Future<List<int>> _fallbackCfSeries30() async {
+    final history = await _storage.getCfHistory();
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final todayKey = DateUtilsCF.toKey(today);
+    final byKey = <String, int>{
+      for (final day in _weekDays) day.dateKey: day.cfScore,
+    };
+
+    return List<int>.generate(30, (index) {
+      final day = today.subtract(Duration(days: 29 - index));
+      final key = DateUtilsCF.toKey(day);
+      final fromHistory = history[key];
+      if (fromHistory != null) return fromHistory;
+      if (key == todayKey) {
+        return _userData.currentCFIndex;
+      }
+      return byKey[key] ?? 0;
+    });
+  }
+
+  List<int> _takeLastDays(
+    List<int> source,
+    int days, {
+    required List<int> fallback,
+  }) {
+    if (source.length >= days) {
+      return List<int>.from(source.sublist(source.length - days));
+    }
+    if (source.isEmpty) return List<int>.from(fallback);
+    return List<int>.filled(days - source.length, 0, growable: true)
+      ..addAll(source);
+  }
+
+  Future<void> _warmHomeDialogMetrics() {
+    final existing = _dialogMetricsPrefetchFuture;
+    if (existing != null) return existing;
+
+    final future = _loadDialogMetricsCache();
+    _dialogMetricsPrefetchFuture = future;
+    return future.whenComplete(() {
+      if (identical(_dialogMetricsPrefetchFuture, future)) {
+        _dialogMetricsPrefetchFuture = null;
+      }
+    });
+  }
+
+  Future<void> _loadDialogMetricsCache() async {
+    final localCfSeries = await _fallbackCfSeries30();
+    final localStepSeries = _fallbackStepSeries30();
+
+    if (mounted) {
+      setState(() {
+        if (_cfSeries30Cache.isEmpty) {
+          _cfSeries30Cache = localCfSeries;
+        }
+        if (_stepsSeries30Cache.isEmpty) {
+          _stepsSeries30Cache = localStepSeries;
+        }
+      });
+    }
+
+    try {
+      final uid = _auth.currentUser?.uid;
+      final snapshotFuture = _appPermissions.getSnapshot();
+      final cfFuture = uid != null
+          ? _dashboard.getCfStats(uid: uid, days: 30)
+          : Future<List<int>>.value(localCfSeries);
+      final stepsFuture = uid != null
+          ? _dashboard.getStepStats(uid: uid, days: 30)
+          : Future<List<int>>.value(localStepSeries);
+
+      final results = await Future.wait<Object?>([
+        cfFuture,
+        stepsFuture,
+        snapshotFuture,
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _cfSeries30Cache = List<int>.from(results[0] as List<int>);
+        _stepsSeries30Cache = List<int>.from(results[1] as List<int>);
+        _stepsPermissionStatusCache =
+            (results[2] as AppPermissionsSnapshot).steps;
+      });
+    } catch (_) {
+      // Keep local fallback values if refresh fails.
+    }
+  }
+
+  Future<void> _loadRealData({
+    bool withLoader = true,
+    bool allowMoodAutoPrompt = false,
+  }) async {
+    if (mounted) {
+      setState(() {
+        if (withLoader && !_hasVisibleContent) {
+          _loading = true;
+        }
+        _loadingPrimaryMetrics = true;
+        _loadingCollections = true;
+        _statusMessage = null;
+      });
+    }
+
+    UserProfile? profile;
     try {
       await _controller.init();
 
       final now = DateTime.now();
       final time = _resolveTimeOfDay(now);
       final firebaseUser = _auth.currentUser;
-      final profile = await _profile.getOrCreateProfile();
+      profile = await _profile.getOrCreateProfile();
+      await _workouts.ensureLoaded();
       final uid = firebaseUser?.uid;
+      final fallbackName = _fallbackUserName(firebaseUser, profile);
 
-      String realName = '';
-      final profileName = profile.name.trim();
-      if (profileName.isNotEmpty) realName = profileName;
-      if (realName.isEmpty) {
-        realName = (firebaseUser?.displayName ?? '').trim();
-      }
+      final essentialData = _userData.copyWith(
+        name: fallbackName,
+        currentCFIndex: _controller.displayedCfIndex,
+        dailyStreak: _controller.streakCount,
+        waterIntake: {
+          'current': (_controller.todayData.waterLiters * 1000).round(),
+          'target': 2000,
+        },
+        stepsCount: {'current': _controller.todayData.steps, 'target': 8000},
+        currentTimeOfDay: time,
+      );
 
-      if (realName.isEmpty && uid != null) {
-        final preferred = await _dashboard.getUserPreferredName(
-          uid: uid,
-          fallbackEmail: firebaseUser?.email,
-        );
-        realName = (preferred ?? '').trim();
-      }
-
-      if (realName.isEmpty) {
-        final email = (firebaseUser?.email ?? '').trim();
-        if (email.contains('@')) realName = email.split('@').first;
-      }
-      if (realName.isEmpty) realName = 'Usuario';
+      if (!mounted) return;
+      setState(() {
+        _userData = essentialData;
+        _profileModel = profile;
+        _suggestionVisible = true;
+        _loading = false;
+        _loadingPrimaryMetrics = false;
+      });
 
       HomeDashboardData? dashboardData;
       Map<String, dynamic>? homeConfig;
       Map<String, dynamic>? homeHeader;
       Map<String, dynamic>? dailyMood;
+      String? preferredName;
       if (uid != null) {
-        dashboardData = await _dashboard.loadDashboard(
-          uid: uid,
-          todayKey: _controller.todayKey,
-          todayCfScore: _controller.displayedCfIndex,
-        );
-        homeConfig = await _dashboard.getUserHomeConfig(uid: uid);
-        homeHeader = await _dashboard.getDailyHomeHeader(
-          uid: uid,
-          dateKey: _controller.todayKey,
-        );
-        dailyMood = await _dashboard.getDailyMood(
-          uid: uid,
-          dateKey: _controller.todayKey,
-        );
+        final results = await Future.wait([
+          _dashboard.loadDashboard(
+            uid: uid,
+            todayKey: _controller.todayKey,
+            todayCfScore: _controller.displayedCfIndex,
+            profile: profile,
+          ),
+          _dashboard.getUserHomeConfig(uid: uid),
+          _dashboard.getDailyHomeHeader(
+            uid: uid,
+            dateKey: _controller.todayKey,
+          ),
+          _dashboard.getDailyMood(uid: uid, dateKey: _controller.todayKey),
+          _dashboard.getUserPreferredName(
+            uid: uid,
+            fallbackEmail: firebaseUser?.email,
+          ),
+        ]);
+        dashboardData = results[0] as HomeDashboardData?;
+        homeConfig = results[1] as Map<String, dynamic>?;
+        homeHeader = results[2] as Map<String, dynamic>?;
+        dailyMood = results[3] as Map<String, dynamic>?;
+        preferredName = results[4] as String?;
       }
+
+      final resolvedName = (preferredName ?? '').trim().isNotEmpty
+          ? (preferredName ?? '').trim()
+          : fallbackName;
 
       final profilePlace = (profile.usualTrainingPlace ?? '').trim();
       final configTemp = (homeConfig?['temperatureC'] as num?)?.round();
@@ -337,6 +825,7 @@ class _HomeScreenState extends State<HomeScreen> {
             (h) => {
               'id': h.id,
               'name': h.name,
+              'repeatDays': h.repeatDays,
               'difficulty': _pointsToDifficulty(h.cfReward),
               'cfPoints': h.cfReward,
               'isCompleted': h.isCompletedToday,
@@ -350,9 +839,11 @@ class _HomeScreenState extends State<HomeScreen> {
               'id': t.id,
               'name': t.title,
               'dueDate': _dueDateLabel(t.dueDate),
+              'dueDateValue': t.dueDate,
               'difficulty': _pointsToDifficulty(t.cfReward),
               'cfPoints': t.cfReward,
               'isCompleted': t.completed,
+              'notificationEnabled': t.notificationEnabled,
             },
           )
           .toList();
@@ -402,31 +893,30 @@ class _HomeScreenState extends State<HomeScreen> {
                   '')
               .trim();
 
-      final next = _userData.copyWith(
-        name: realName,
+      final next = essentialData.copyWith(
+        name: resolvedName,
         currentCFIndex: _controller.displayedCfIndex,
-        dailyStreak: dashboardData?.streak ?? _controller.streakCount,
+        dailyStreak: dashboardData?.streak ?? essentialData.dailyStreak,
         weeklyStreak: dashboardData?.weeklyStreak ?? 0,
         moodRegisteredToday: hasMood,
         currentMoodIcon: moodIcon.isNotEmpty
             ? moodIcon
-            : _userData.currentMoodIcon,
-        waterIntake: {
-          'current': (_controller.todayData.waterLiters * 1000).round(),
-          'target': 2000,
-        },
-        stepsCount: {'current': _controller.todayData.steps, 'target': 8000},
+            : essentialData.currentMoodIcon,
         dailyGoal: {...configuredDailyGoal, 'progress': dailyProgress},
         weeklyGoal: {...configuredWeeklyGoal, 'progress': weeklyProgress},
         weeklyChallenge: {
+          'id': challenge?.id ?? '',
+          'weekId': challenge?.weekId ?? '',
           'title': challenge?.title ?? 'Sin reto activo',
           'description':
               challenge?.description ??
               'No hay reto activo. ¡Pronto uno nuevo!',
           'userProgress': challenge?.progressValue ?? 0,
           'target': challenge?.targetValue ?? 1,
-          'communityProgress': ((challenge?.progress ?? 0) * 100).round(),
+          'communityCompletionPct': challenge?.communityCompletionPct ?? 0,
           'reward': '+${challenge?.rewardCfBonus ?? 0} CF',
+          'rewardCfBonus': challenge?.rewardCfBonus ?? 0,
+          'completed': challenge?.completed ?? false,
           'isActive': challenge != null,
         },
         habits: habitsMapped,
@@ -438,6 +928,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final suggestions = _suggestionsForNow();
       setState(() {
         _userData = next;
+        _profileModel = profile;
         _weekDays = dashboardData?.weekDays ?? const [];
         _weeklyHabitsCompleted = dashboardData?.weeklyHabitsCompleted ?? 0;
         _weeklyHabitActiveDays = dashboardData?.weeklyHabitActiveDays ?? 0;
@@ -445,36 +936,47 @@ class _HomeScreenState extends State<HomeScreen> {
         _cityLabel = cityLabel;
         _tempLabel = tempLabel;
         _suggestionVisible = true;
+        _loadingCollections = false;
+        _statusMessage = null;
         if (_suggestionIndex >= suggestions.length) {
           _suggestionIndex = 0;
         }
       });
+      unawaited(_syncTaskReminders(todosMapped));
 
-      if (uid != null) {
-        await _dashboard.saveDailyStatsSnapshot(
-          uid: uid,
-          dateKey: _controller.todayKey,
-          cfIndex: next.currentCFIndex,
-          steps: next.stepsCount['current'] ?? 0,
-          waterMl: next.waterIntake['current'] ?? 0,
-        );
-        await _dashboard.saveDailyHomeHeader(
-          uid: uid,
-          dateKey: _controller.todayKey,
-          timeOfDay: next.currentTimeOfDay,
-          moodRegistered: next.moodRegisteredToday,
-          moodIcon: next.currentMoodIcon,
-          suggestion: suggestions.first,
+      if (uid != null && challenge != null) {
+        unawaited(
+          _claimWeeklyChallengeRewardIfEligible(uid: uid, challenge: challenge),
         );
       }
-      await _refreshEnvironmentInfo();
+
+      if (uid != null) {
+        unawaited(
+          _dashboard.saveDailyStatsSnapshot(
+            uid: uid,
+            dateKey: _controller.todayKey,
+            cfIndex: next.currentCFIndex,
+            steps: next.stepsCount['current'] ?? 0,
+            waterMl: next.waterIntake['current'] ?? 0,
+          ),
+        );
+        unawaited(
+          _dashboard.saveDailyHomeHeader(
+            uid: uid,
+            dateKey: _controller.todayKey,
+            timeOfDay: next.currentTimeOfDay,
+            moodRegistered: next.moodRegisteredToday,
+            moodIcon: next.currentMoodIcon,
+            suggestion: _suggestionForStorage(),
+          ),
+        );
+      }
+      unawaited(_refreshEnvironmentInfo());
+      unawaited(_persistHomeCache());
     } catch (_) {
       final fallbackTime = _resolveTimeOfDay(DateTime.now());
       final fallbackUser = _auth.currentUser;
-      final email = (fallbackUser?.email ?? '').trim();
-      final fallbackName = (fallbackUser?.displayName ?? '').trim().isNotEmpty
-          ? (fallbackUser?.displayName ?? '').trim()
-          : (email.contains('@') ? email.split('@').first : 'Usuario');
+      final fallbackName = _fallbackUserName(fallbackUser, profile);
 
       if (!mounted) return;
       setState(() {
@@ -485,9 +987,18 @@ class _HomeScreenState extends State<HomeScreen> {
         _cityLabel = 'Ubicación no disponible';
         _tempLabel = '--°C';
         _suggestionVisible = true;
+        _loadingPrimaryMetrics = false;
+        _loadingCollections = false;
+        _statusMessage = _hasVisibleContent
+            ? 'No se detecta una fuente de internet. Mostrando los últimos datos guardados.'
+            : 'No se detecta una fuente de internet. Las secciones se completarán cuando vuelva la conexión.';
       });
     } finally {
       if (mounted) setState(() => _loading = false);
+      unawaited(_warmHomeDialogMetrics());
+      if (allowMoodAutoPrompt) {
+        _scheduleMoodAutoPrompt();
+      }
     }
   }
 
@@ -501,10 +1012,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startClockTicker() {
     _clockTimer?.cancel();
+    _clockStartTimer?.cancel();
     _clockNow = DateTime.now();
     final secondsToNextMinute = 60 - _clockNow.second;
 
-    Future<void>.delayed(Duration(seconds: secondsToNextMinute), () {
+    _clockStartTimer = Timer(Duration(seconds: secondsToNextMinute), () {
       if (!mounted) return;
       setState(() {
         _clockNow = DateTime.now();
@@ -526,7 +1038,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  bool get _isRunningWidgetTest {
+    // We cannot import `flutter_test` from production code, so detect it by
+    // checking the binding runtimeType.
+    try {
+      final type = WidgetsBinding.instance.runtimeType.toString();
+      return type.contains('TestWidgetsFlutterBinding') ||
+          type.contains('AutomatedTestWidgetsFlutterBinding') ||
+          type.contains('LiveTestWidgetsFlutterBinding');
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _refreshEnvironmentInfo() async {
+    if (_isRunningWidgetTest) return;
     final fallbackEmoji = _clockNow.hour >= 7 && _clockNow.hour < 20
         ? '☀️'
         : '🌙';
@@ -773,7 +1299,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontSize: 14.5,
                 fontWeight: FontWeight.w400,
-                color: CFColors.textSecondary,
+                color: context.cfTextSecondary,
               ),
             ),
             const SizedBox(height: 10),
@@ -905,7 +1431,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (type.contains('paso')) {
       final totalSteps = (dashboardData?.weekDays ?? const <HomeDayStat>[])
-          .fold<int>(0, (sum, day) => sum + day.steps);
+          .fold<int>(0, (acc, day) => acc + day.steps);
       if (t >= 20000) return totalSteps.clamp(0, t);
       return (weekly?.stepsDays6000 ?? 0).clamp(0, t);
     }
@@ -923,14 +1449,78 @@ class _HomeScreenState extends State<HomeScreen> {
         .clamp(0, t);
   }
 
+  String _fallbackUserName(User? firebaseUser, UserProfile? profile) {
+    final profileName = (profile?.name ?? '').trim();
+    if (profileName.isNotEmpty) return profileName;
+
+    final displayName = (firebaseUser?.displayName ?? '').trim();
+    if (displayName.isNotEmpty) return displayName;
+
+    final email = (firebaseUser?.email ?? '').trim();
+    if (email.contains('@')) return email.split('@').first;
+
+    return 'Usuario';
+  }
+
+  Future<void> _syncTaskReminders(List<Map<String, dynamic>> tasks) async {
+    for (final task in tasks) {
+      final taskId = (task['id'] as String? ?? '').trim();
+      if (taskId.isEmpty) continue;
+
+      final rawDueDate = task['dueDateValue'];
+      final dueDate = rawDueDate is DateTime
+          ? rawDueDate
+          : DateTime.tryParse(rawDueDate?.toString() ?? '');
+
+      await TaskReminderService.instance.syncTaskReminder(
+        taskId: taskId,
+        title: (task['name'] as String? ?? 'Tarea pendiente').trim(),
+        dueDate: dueDate,
+        enabled: task['notificationEnabled'] == true,
+        completed: task['isCompleted'] == true,
+      );
+    }
+  }
+
   String _dueDateLabel(DateTime? dueDate) {
     if (dueDate == null) return 'Sin fecha';
+    final localizations = MaterialLocalizations.of(context);
     final today = DateUtilsCF.dateOnly(DateTime.now());
     final due = DateUtilsCF.dateOnly(dueDate);
     final diff = due.difference(today).inDays;
-    if (diff == 0) return 'Hoy';
-    if (diff == 1) return 'Mañana';
-    return '${due.day.toString().padLeft(2, '0')}/${due.month.toString().padLeft(2, '0')}';
+    final timeLabel = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(dueDate),
+      alwaysUse24HourFormat: true,
+    );
+    if (diff == 0) return 'Hoy · $timeLabel';
+    if (diff == 1) return 'Mañana · $timeLabel';
+    return '${localizations.formatShortDate(dueDate)} · $timeLabel';
+  }
+
+  String _dueDateEditorLabel(DateTime dueDate) {
+    final localizations = MaterialLocalizations.of(context);
+    return '${localizations.formatFullDate(dueDate)} · ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(dueDate), alwaysUse24HourFormat: true)}';
+  }
+
+  String _repeatDaysLabel(Object? rawRepeatDays) {
+    const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+    if (rawRepeatDays is! List) return 'Todos los días';
+
+    final days =
+        rawRepeatDays
+            .map((e) {
+              if (e is int) return e;
+              if (e is num) return e.round();
+              return int.tryParse(e.toString());
+            })
+            .whereType<int>()
+            .where((d) => d >= 1 && d <= 7)
+            .toSet()
+            .toList()
+          ..sort();
+
+    if (days.isEmpty) return 'Todos los días';
+    return days.map((d) => labels[d - 1]).join(' ');
   }
 
   ({String greeting, String question}) _greetingFor() {
@@ -961,7 +1551,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _streakLine() {
     final streak = _userData.dailyStreak;
-    return 'Llevas $streak días seguidos 🔥';
+    return 'Llevas $streak dias seguidos en ${_streakLabel().toLowerCase()} 🔥';
+  }
+
+  String _streakLabel() {
+    final profile = _profileModel;
+    if (profile == null || !profile.hasPersonalizedStreakPreferences) {
+      return 'tu racha';
+    }
+
+    final title = profile.effectiveStreakPreferences.title;
+    if (title == 'Mix flexible' || title == 'Mix completo') {
+      return 'tu racha personalizada';
+    }
+    return 'tu racha de ${title.toLowerCase()}';
+  }
+
+  String _streakCardLabel() {
+    final profile = _profileModel;
+    if (profile == null || !profile.hasPersonalizedStreakPreferences) {
+      return 'Racha';
+    }
+
+    final chip = profile.effectiveStreakPreferences.chipLabel;
+    if (chip == 'Mix flexible' || chip == 'Mix total') {
+      return 'Racha mix';
+    }
+    return chip;
   }
 
   String _coachMicroMessage() {
@@ -1054,9 +1670,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         decoration: BoxDecoration(
                           border: Border.all(
                             color: initialEmoji == icon
-                                ? CFColors.primary
-                                : CFColors.softGray,
+                                ? context.cfPrimary
+                                : context.cfBorder,
                           ),
+                          color: initialEmoji == icon
+                              ? context.cfPrimaryTint
+                              : context.cfSurface,
                           borderRadius: const BorderRadius.all(
                             Radius.circular(14),
                           ),
@@ -1230,7 +1849,7 @@ class _HomeScreenState extends State<HomeScreen> {
         timeOfDay: _userData.currentTimeOfDay,
         moodRegistered: true,
         moodIcon: emoji,
-        suggestion: _suggestionForNow(),
+        suggestion: _suggestionForStorage(),
       );
     }
   }
@@ -1252,8 +1871,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   level <= value ? Icons.circle : Icons.circle_outlined,
                   size: 16,
                   color: level <= value
-                      ? CFColors.primary
-                      : CFColors.textSecondary,
+                      ? context.cfPrimary
+                      : context.cfTextSecondary,
                 ),
               );
             }),
@@ -1353,44 +1972,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showCfAndStreakDialog() async {
-    final uid = _auth.currentUser?.uid;
-    List<int> cfSeries30 = const [];
-    if (uid != null) {
-      try {
-        final fresh = await _dashboard.loadDashboard(
-          uid: uid,
-          todayKey: _controller.todayKey,
-          todayCfScore: _controller.displayedCfIndex,
-        );
-        cfSeries30 = await _dashboard.getCfStats(uid: uid, days: 30);
-        if (mounted) {
-          setState(() {
-            _userData = _userData.copyWith(
-              dailyStreak: fresh.streak,
-              weeklyStreak: fresh.weeklyStreak,
-              currentCFIndex: fresh.cfScore,
-            );
-            _weekDays = fresh.weekDays;
-            _weeklyHabitsCompleted = fresh.weeklyHabitsCompleted;
-            _weeklyHabitActiveDays = fresh.weeklyHabitActiveDays;
-          });
-        }
-      } catch (_) {
-        // Keep current local values if refresh fails.
-      }
-    }
-
-    if (cfSeries30.isEmpty) {
-      final history = await _storage.getCfHistory();
-      final today = DateUtilsCF.dateOnly(DateTime.now());
-      cfSeries30 = List<int>.generate(30, (i) {
-        final day = today.subtract(Duration(days: 29 - i));
-        final key = DateUtilsCF.toKey(day);
-        final v = history[key];
-        if (v == null && i == 29) return _userData.currentCFIndex;
-        return v ?? 0;
-      });
-    }
+    final fallbackSeries = _cfSeries30Cache.isNotEmpty
+        ? List<int>.from(_cfSeries30Cache)
+        : await _fallbackCfSeries30();
 
     List<int> normalizeSeries(List<int> source) {
       if (source.isEmpty) return const [0];
@@ -1402,20 +1986,54 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    List<int> pickSeries(int days) {
-      if (cfSeries30.length <= days) return normalizeSeries(cfSeries30);
-      return normalizeSeries(cfSeries30.sublist(cfSeries30.length - days));
+    List<int> pickSeries(List<int> source, int days) {
+      if (source.length <= days) return normalizeSeries(source);
+      return normalizeSeries(source.sublist(source.length - days));
     }
 
     if (!mounted) return;
 
     await showDialog<void>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         var selectedDays = 14;
+        var cfSeries30 = fallbackSeries;
+        var refreshing = false;
+        var refreshStarted = false;
+
+        Future<void> refreshDialogMetrics(
+          void Function(VoidCallback fn) setDialogState,
+        ) async {
+          if (refreshing) return;
+
+          setDialogState(() {
+            refreshing = true;
+          });
+
+          try {
+            await _warmHomeDialogMetrics();
+            if (!mounted || !dialogContext.mounted) return;
+
+            final refreshedSeries = _cfSeries30Cache.isNotEmpty
+                ? List<int>.from(_cfSeries30Cache)
+                : await _fallbackCfSeries30();
+            if (!mounted || !dialogContext.mounted) return;
+
+            setDialogState(() {
+              cfSeries30 = refreshedSeries;
+              refreshing = false;
+            });
+          } catch (_) {
+            if (!dialogContext.mounted) return;
+            setDialogState(() {
+              refreshing = false;
+            });
+          }
+        }
+
         return StatefulBuilder(
           builder: (context, setLocal) => AlertDialog(
-            title: const Text('Rachas y Puntuaje CF'),
+            title: const Text('Racha y puntuaje CF'),
             content: SizedBox(
               width: 360,
               child: Column(
@@ -1437,12 +2055,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         .toList(),
                   ),
                   const SizedBox(height: 10),
+                  if (!refreshStarted) ...[
+                    Builder(
+                      builder: (_) {
+                        refreshStarted = true;
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!dialogContext.mounted) return;
+                          unawaited(refreshDialogMetrics(setLocal));
+                        });
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ],
+                  if (refreshing) ...[
+                    const LinearProgressIndicator(minHeight: 3),
+                    const SizedBox(height: 10),
+                  ],
                   SizedBox(
                     height: 170,
-                    child: _CfHistoryChart(values: pickSeries(selectedDays)),
+                    child: _CfHistoryChart(
+                      values: pickSeries(cfSeries30, selectedDays),
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  Text('Racha diaria: ${_userData.dailyStreak} días'),
+                  Text('${_streakLabel()}: ${_userData.dailyStreak} dias'),
                   Text('Racha semanal: ${_userData.weeklyStreak} semanas'),
                   const SizedBox(height: 10),
                   SizedBox(
@@ -1526,7 +2162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     setLocal(() {});
                   },
                   icon: const Icon(Icons.add),
-                  label: const Text('Añadir 250 ml'),
+                  label: const Text('Añadir un vaso de agua.'),
                 ),
               ],
             ),
@@ -1559,39 +2195,232 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showStepsDialog() async {
-    final weekly = await _collectStepSeries(7);
-    final monthly = await _collectStepSeries(30);
+    final fallbackMonthly = _stepsSeries30Cache.isNotEmpty
+        ? List<int>.from(_stepsSeries30Cache)
+        : _fallbackStepSeries30();
+    final fallbackWeekly = _takeLastDays(
+      fallbackMonthly,
+      7,
+      fallback: _takeLastDays(
+        _fallbackStepSeries30(),
+        7,
+        fallback: List<int>.filled(7, 0),
+      ),
+    );
 
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Pasos por semana y mes'),
-        content: SizedBox(
-          width: 380,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Últimos 7 días'),
-                const SizedBox(height: 8),
-                SizedBox(height: 120, child: _BarsChart(values: weekly)),
-                const SizedBox(height: 12),
-                const Text('Últimos 30 días'),
-                const SizedBox(height: 8),
-                SizedBox(height: 120, child: _BarsChart(values: monthly)),
+      builder: (dialogContext) {
+        var weeklyValues = fallbackWeekly;
+        var monthlyValues = fallbackMonthly;
+        var stepsPermissionStatus = _stepsPermissionStatusCache;
+        var loadingStepMetrics = false;
+        var requestingStepsPermission = false;
+        var refreshStarted = false;
+
+        Future<void> refreshStepsData(
+          void Function(VoidCallback fn) setDialogState,
+        ) async {
+          if (loadingStepMetrics) return;
+
+          setDialogState(() => loadingStepMetrics = true);
+          try {
+            await _warmHomeDialogMetrics();
+            if (!mounted || !dialogContext.mounted) return;
+
+            final refreshedMonthly = _stepsSeries30Cache.isNotEmpty
+                ? List<int>.from(_stepsSeries30Cache)
+                : _fallbackStepSeries30();
+            final refreshedWeekly = _takeLastDays(
+              refreshedMonthly,
+              7,
+              fallback: fallbackWeekly,
+            );
+
+            setDialogState(() {
+              weeklyValues = refreshedWeekly;
+              monthlyValues = refreshedMonthly;
+              stepsPermissionStatus = _stepsPermissionStatusCache;
+              loadingStepMetrics = false;
+            });
+          } catch (_) {
+            if (!dialogContext.mounted) return;
+            setDialogState(() => loadingStepMetrics = false);
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> requestStepsPermission() async {
+              if (requestingStepsPermission) return;
+
+              setDialogState(() => requestingStepsPermission = true);
+              try {
+                final status = await _appPermissions.requestStepsPermission();
+                if (status == AppPermissionStatus.granted) {
+                  await _health.syncTodaySteps();
+                  await _loadRealData(withLoader: false);
+                  final refreshedMonthly = await _collectStepSeries(30);
+                  final refreshedWeekly = _takeLastDays(
+                    refreshedMonthly,
+                    7,
+                    fallback: fallbackWeekly,
+                  );
+                  if (!mounted) return;
+                  setState(() {
+                    _stepsSeries30Cache = List<int>.from(refreshedMonthly);
+                    _stepsPermissionStatusCache = AppPermissionStatus.granted;
+                  });
+                  setDialogState(() {
+                    weeklyValues = refreshedWeekly;
+                    monthlyValues = refreshedMonthly;
+                    stepsPermissionStatus = AppPermissionStatus.granted;
+                    requestingStepsPermission = false;
+                  });
+                  _showStepsPermissionSnackBar(
+                    'Actividad física activada. Ya puedes sincronizar tus pasos.',
+                  );
+                  return;
+                }
+
+                if (mounted) {
+                  setState(() {
+                    _stepsPermissionStatusCache = status;
+                  });
+                }
+                setDialogState(() {
+                  stepsPermissionStatus = status;
+                  requestingStepsPermission = false;
+                });
+                _showStepsPermissionSnackBar(_stepsPermissionMessage(status));
+              } catch (_) {
+                if (mounted) {
+                  setState(() {
+                    _stepsPermissionStatusCache =
+                        AppPermissionStatus.unavailable;
+                  });
+                }
+                setDialogState(() {
+                  stepsPermissionStatus = AppPermissionStatus.unavailable;
+                  requestingStepsPermission = false;
+                });
+                _showStepsPermissionSnackBar(
+                  'No se ha podido activar el acceso a pasos en este dispositivo.',
+                );
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Pasos por semana y mes'),
+              content: SizedBox(
+                width: 380,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!refreshStarted) ...[
+                        Builder(
+                          builder: (_) {
+                            refreshStarted = true;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!dialogContext.mounted) return;
+                              unawaited(refreshStepsData(setDialogState));
+                            });
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ],
+                      if (loadingStepMetrics) ...[
+                        const LinearProgressIndicator(minHeight: 3),
+                        const SizedBox(height: 12),
+                      ],
+                      if (stepsPermissionStatus !=
+                          AppPermissionStatus.granted) ...[
+                        Text(
+                          stepsPermissionStatus !=
+                                  AppPermissionStatus.unavailable
+                              ? 'Activa la actividad física para que CotidyFit pueda leer y sincronizar tus pasos automáticamente.'
+                              : 'El acceso a pasos no está disponible ahora mismo en este dispositivo.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        if (stepsPermissionStatus !=
+                            AppPermissionStatus.unavailable) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: requestingStepsPermission
+                                  ? null
+                                  : requestStepsPermission,
+                              icon: requestingStepsPermission
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.directions_walk_rounded),
+                              label: Text(
+                                requestingStepsPermission
+                                    ? 'Activando actividad física...'
+                                    : 'Permitir actividad física',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ] else ...[
+                          const SizedBox(height: 16),
+                        ],
+                      ],
+                      const Text('Últimos 7 días'),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 170,
+                        child: _StepsHistoryChart(values: weeklyValues),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Últimos 30 días'),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 170,
+                        child: _StepsHistoryChart(values: monthlyValues),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
               ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
+  }
+
+  void _showStepsPermissionSnackBar(String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _stepsPermissionMessage(AppPermissionStatus status) {
+    switch (status) {
+      case AppPermissionStatus.granted:
+        return 'Actividad física activada. Ya puedes sincronizar tus pasos.';
+      case AppPermissionStatus.notRequested:
+      case AppPermissionStatus.denied:
+        return 'No se ha concedido el acceso a pasos o actividad física.';
+      case AppPermissionStatus.unavailable:
+        return 'Health Connect no está disponible en este dispositivo.';
+    }
   }
 
   String _heroCfLabel() {
@@ -1602,6 +2431,124 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Empezando';
   }
 
+  Map<String, dynamic>? _personalizedWorkoutSuggestion() {
+    final workouts = _workouts.getAllWorkouts();
+    final profile = _profileModel;
+    if (workouts.isEmpty || profile == null) return null;
+
+    final hour = DateTime.now().hour;
+    final stress = _controller.todayData.stress ?? 3;
+    final sleep = _controller.todayData.sleep ?? 3;
+    final didWorkout = _controller.workoutCompleted;
+    final steps = _userData.stepsCount['current'] ?? 0;
+    final availableMinutes = profile.availableMinutes;
+    final workType = profile.workType;
+
+    final scored = workouts
+        .map((workout) {
+          final recommendation = TrainingRecommendationService.scoreWorkout(
+            profile: profile,
+            workout: workout,
+          );
+
+          var contextualScore = recommendation.score;
+          final tags = <String>[];
+          final name = workout.name.toLowerCase();
+          final category = workout.category.toLowerCase();
+          final recoveryStyle =
+              workout.goals.contains(WorkoutGoal.movilidad) ||
+              workout.goals.contains(WorkoutGoal.flexibilidad) ||
+              workout.difficulty == WorkoutDifficulty.leve ||
+              name.contains('movil') ||
+              name.contains('estir') ||
+              name.contains('yoga') ||
+              category.contains('movil') ||
+              category.contains('estir') ||
+              category.contains('yoga');
+
+          if (availableMinutes != null && availableMinutes > 0) {
+            if (workout.durationMinutes <= availableMinutes) {
+              contextualScore += 2;
+              tags.add('entra en tu tiempo disponible');
+            } else if (workout.durationMinutes > availableMinutes + 10) {
+              contextualScore -= 1;
+            }
+          }
+
+          if (!didWorkout && hour < 12 && workout.durationMinutes <= 20) {
+            contextualScore += 1;
+            tags.add('es una opción rápida para arrancar el día');
+          }
+
+          if (!didWorkout &&
+              steps < 2500 &&
+              (workType == WorkType.oficina ||
+                  workType == WorkType.estudiante)) {
+            if (workout.durationMinutes <= 25 || recoveryStyle) {
+              contextualScore += 1;
+              tags.add('te ayuda a romper el sedentarismo de hoy');
+            }
+          }
+
+          if (didWorkout) {
+            if (recoveryStyle) {
+              contextualScore += 2;
+              tags.add('favorece recuperación y movilidad');
+            } else {
+              contextualScore -= 2;
+            }
+          }
+
+          if (hour >= 19 && (stress >= 4 || sleep <= 2)) {
+            if (recoveryStyle) {
+              contextualScore += 2;
+              tags.add('encaja mejor con tu energía de hoy');
+            } else if (workout.difficulty == WorkoutDifficulty.experto) {
+              contextualScore -= 2;
+            }
+          }
+
+          return (
+            workout: workout,
+            recommendation: recommendation,
+            score: contextualScore,
+            tags: tags,
+          );
+        })
+        .where((entry) => entry.score >= 0)
+        .toList();
+
+    if (scored.isEmpty) return null;
+
+    scored.sort((a, b) {
+      final byScore = b.score.compareTo(a.score);
+      if (byScore != 0) return byScore;
+      return a.workout.durationMinutes.compareTo(b.workout.durationMinutes);
+    });
+
+    final best = scored.first;
+    final reasons = <String>[
+      best.recommendation.explanation,
+      ...best.tags,
+    ].where((text) => text.trim().isNotEmpty).toList(growable: false);
+
+    return {
+      'badge': didWorkout
+          ? 'Recuperación personalizada'
+          : 'Entrenamiento para ti',
+      'title': best.workout.name,
+      'microcopy': reasons.isNotEmpty
+          ? reasons.take(2).join(' ')
+          : 'Te recomendamos esta opción por encaje general con tu perfil.',
+      'button': didWorkout ? 'Ver recuperación' : 'Ver entrenamiento',
+      'icon': didWorkout
+          ? Icons.self_improvement_outlined
+          : Icons.fitness_center_outlined,
+      'action': 'workout',
+      'workout': best.workout,
+    };
+  }
+
   List<Map<String, dynamic>> _suggestionsForNow() {
     final h = DateTime.now().hour;
     final steps = _userData.stepsCount['current'] ?? 0;
@@ -1609,16 +2556,33 @@ class _HomeScreenState extends State<HomeScreen> {
     final stress = _controller.todayData.stress ?? 3;
     final sleep = _controller.todayData.sleep ?? 3;
     final didWorkout = _controller.workoutCompleted;
+    final workType = _profileModel?.workType;
+    final dailyProgress = (_userData.dailyGoal['progress'] as int? ?? 0).clamp(
+      0,
+      100,
+    );
+    final weeklyProgress = (_userData.weeklyGoal['progress'] as int? ?? 0)
+        .clamp(0, 100);
+    final weekday = DateTime.now().weekday;
 
     final out = <Map<String, dynamic>>[];
 
-    if (h < 12 && steps < 1200) {
+    final workoutSuggestion = _personalizedWorkoutSuggestion();
+    if (workoutSuggestion != null) {
+      out.add(workoutSuggestion);
+    }
+
+    if (!didWorkout && h < 12 && steps < 1200) {
       out.add({
-        'badge': 'Ideal para ahora',
-        'title': 'Despertar suave',
+        'badge': 'Ideal para esta mañana',
+        'title': workType == WorkType.oficina || workType == WorkType.estudiante
+            ? 'Activa el cuerpo antes de sentarte'
+            : 'Despertar suave',
         'microcopy':
-            'Tu cuerpo pide movimiento. ¿Qué tal 10 min de yoga para despertar?',
-        'button': 'Estirar',
+            workType == WorkType.oficina || workType == WorkType.estudiante
+            ? 'Llevas pocos pasos y tu día apunta a sedentario. Un bloque corto ahora te cambia el resto del día.'
+            : 'Tu cuerpo pide movimiento. Un bloque corto de movilidad puede hacer que el día empiece mucho mejor.',
+        'button': 'Moverme ahora',
         'icon': Icons.self_improvement_outlined,
         'tab': 3,
       });
@@ -1627,55 +2591,82 @@ class _HomeScreenState extends State<HomeScreen> {
       out.add({
         'badge': 'Post-entreno',
         'title': 'Recuperación inteligente',
-        'microcopy':
-            '¡Gran esfuerzo! Recupera energía con un bowl de proteína y verduras.',
+        'microcopy': _profileModel?.goal.trim().isNotEmpty == true
+            ? 'Ya entrenaste. Prioriza una comida que acompañe tu objetivo de ${_profileModel!.goal.toLowerCase()}.'
+            : '¡Gran esfuerzo! Recupera energía con una comida completa y buena hidratación.',
         'button': 'Ver receta',
         'icon': Icons.ramen_dining_outlined,
         'tab': 0,
       });
     }
-    if (h >= 19 && (stress >= 4 || sleep <= 2)) {
+    if (h >= 19 &&
+        (stress >= 4 || sleep <= 2) &&
+        !_userData.moodRegisteredToday) {
       out.add({
         'badge': 'Basado en tu estado',
         'title': 'Calma mental',
-        'microcopy':
-            'Día intenso. Una meditación de 3 min te ayudará a descansar mejor.',
+        'microcopy': sleep <= 2
+            ? 'Dormiste poco y el cuerpo suele notarlo al final del día. Un cierre suave te ayudará más que apretar.'
+            : 'Tu nivel de estrés está alto. Unos minutos de pausa ahora pueden mejorar mucho tu descanso.',
         'button': 'Meditar',
         'icon': Icons.nights_stay_outlined,
         'tab': 3,
       });
     }
     if (water < 1000) {
+      final missing = (2000 - water).clamp(0, 2000);
       out.add({
         'badge': 'Basado en tu hidratación',
         'title': 'Hidratación rápida',
-        'microcopy':
-            'Vas por debajo de tu meta. Un vaso de agua ahora te ayuda mucho.',
+        'microcopy': missing > 0
+            ? 'Vas por debajo de tu meta diaria. Si sumas ${missing >= 500 ? 'un buen vaso' : 'un pequeño vaso'} ahora, te será más fácil llegar hoy.'
+            : 'Un vaso de agua ahora te ayuda a mantener el ritmo del día.',
         'button': 'Registrar agua',
         'icon': Icons.water_drop_outlined,
         'action': 'water',
       });
     }
 
-    out.addAll([
-      {
-        'badge': 'Recomendación del momento',
-        'title': 'Paseo digestivo',
+    if (!didWorkout && weekday >= DateTime.thursday && weeklyProgress < 55) {
+      out.add({
+        'badge': 'Objetivo semanal',
+        'title': 'Recupera tu semana',
         'microcopy':
-            '15 min de caminata para evitar el bajón y sumar pasos diarios.',
-        'button': 'Registrar pasos',
-        'icon': Icons.directions_walk_outlined,
-        'action': 'steps',
-      },
-      {
-        'badge': 'Recomendación del momento',
+            'Vas sobre el ${weeklyProgress.toString()}% de tu objetivo semanal. Un entreno corto hoy te deja mejor colocado para cerrarla bien.',
+        'button': 'Ver opciones',
+        'icon': Icons.flag_outlined,
+        'action': 'workout',
+        'workout': workoutSuggestion?['workout'],
+      });
+    }
+
+    if (!_userData.moodRegisteredToday && dailyProgress < 50) {
+      out.add({
+        'badge': 'Chequeo personal',
         'title': 'Mini chequeo',
-        'microcopy': 'Revisa tu estado de ánimo para ajustar mejor tu día.',
+        'microcopy':
+            'Registrar cómo te sientes ayuda a ajustar mejor tus decisiones del día y a entender tus patrones.',
         'button': 'Registrar estado',
         'icon': Icons.mood_outlined,
         'action': 'mood',
-      },
-    ]);
+      });
+    }
+
+    if (steps < 6000) {
+      out.add({
+        'badge': 'Movimiento diario',
+        'title': workType == WorkType.oficina || workType == WorkType.estudiante
+            ? 'Rompe el sedentarismo'
+            : 'Paseo digestivo',
+        'microcopy':
+            workType == WorkType.oficina || workType == WorkType.estudiante
+            ? 'Llevas pocos pasos para el tipo de día que sueles tener. Una caminata corta te vendrá especialmente bien.'
+            : 'Un paseo corto ahora te ayuda a sumar pasos sin que se sienta como otra tarea grande.',
+        'button': 'Registrar pasos',
+        'icon': Icons.directions_walk_outlined,
+        'action': 'steps',
+      });
+    }
 
     return out;
   }
@@ -1685,8 +2676,57 @@ class _HomeScreenState extends State<HomeScreen> {
     return list.isNotEmpty ? list.first : const <String, dynamic>{};
   }
 
+  Map<String, dynamic> _suggestionForStorage() {
+    final suggestion = _suggestionForNow();
+    if (suggestion.isEmpty) return const <String, dynamic>{};
+
+    final out = <String, dynamic>{};
+
+    void copyString(String key) {
+      final value = (suggestion[key] as String?)?.trim();
+      if (value != null && value.isNotEmpty) {
+        out[key] = value;
+      }
+    }
+
+    copyString('badge');
+    copyString('title');
+    copyString('microcopy');
+    copyString('button');
+    copyString('action');
+
+    final tab = suggestion['tab'];
+    if (tab is int) {
+      out['tab'] = tab;
+    }
+
+    final icon = suggestion['icon'];
+    if (icon is IconData) {
+      out['iconCodePoint'] = icon.codePoint;
+      if (icon.fontFamily != null) {
+        out['iconFontFamily'] = icon.fontFamily;
+      }
+      if (icon.fontPackage != null) {
+        out['iconFontPackage'] = icon.fontPackage;
+      }
+    }
+
+    return out;
+  }
+
   Future<void> _executeSuggestion(Map<String, dynamic> suggestion) async {
     final action = (suggestion['action'] as String? ?? '').trim();
+    if (action == 'workout') {
+      final workout = suggestion['workout'];
+      if (workout is Workout) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => WorkoutDetailScreen(workout: workout),
+          ),
+        );
+        return;
+      }
+    }
     if (action == 'water') {
       await _showWaterDialog();
       return;
@@ -1782,9 +2822,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           .map(
                             (opt) => DropdownMenuItem<String>(
                               value: opt['description'] as String,
-                              child: Text(
-                                '${opt['description']} (meta: ${opt['target']})',
-                              ),
+                              child: Text(opt['description'] as String),
                             ),
                           )
                           .toList(),
@@ -1852,24 +2890,70 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _showChallengeDetails() async {
     final c = _userData.weeklyChallenge;
+
+    final title = (c['title'] as String? ?? 'Reto semanal').trim();
+    final description = (c['description'] as String? ?? '').trim();
+    final userProgress = _asInt(c['userProgress'], fallback: 0);
+    final target = _asInt(c['target'], fallback: 1);
+    final communityCompletionPct = _asInt(
+      c['communityCompletionPct'],
+      fallback: 0,
+    ).clamp(0, 100);
+    final rewardText = (c['reward'] as String? ?? '').trim();
+    final completed =
+        (c['completed'] == true) || (target > 0 && userProgress >= target);
+    final progress = (userProgress / (target <= 0 ? 1 : target))
+        .clamp(0.0, 1.0)
+        .toDouble();
+
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(c['title'] as String? ?? 'Reto semanal'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(c['description'] as String? ?? ''),
-            const SizedBox(height: 10),
-            Text('Tu progreso: ${c['userProgress']}/${c['target']}'),
-            Text('Comunidad: ${c['communityProgress']}%'),
-            Text('Recompensa: ${c['reward']}'),
-            const SizedBox(height: 8),
-            const Text(
-              'Este bloque se alimenta desde weeklyChallenges en Firestore.',
-            ),
-          ],
+        title: Text(title),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (description.isNotEmpty) Text(description),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(999)),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 10,
+                  backgroundColor: CFColors.softGray,
+                  valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _challengeInfoRow(
+                icon: Icons.show_chart_outlined,
+                label: 'Tu progreso',
+                value: '$userProgress/$target',
+              ),
+              const SizedBox(height: 6),
+              _challengeInfoRow(
+                icon: Icons.people_outline,
+                label: 'Comunidad (completado)',
+                value: '$communityCompletionPct%',
+              ),
+              const SizedBox(height: 6),
+              _challengeInfoRow(
+                icon: Icons.workspace_premium_outlined,
+                label: 'Recompensa al completar (semana)',
+                value: rewardText,
+              ),
+              if (completed) ...[
+                const SizedBox(height: 10),
+                Text(
+                  '¡Reto completado! La recompensa se aplica para esta semana.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1879,6 +2963,157 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  Widget _challengeInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: CFColors.textSecondary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _claimWeeklyChallengeRewardIfEligible({
+    required String uid,
+    required WeeklyChallengeData challenge,
+  }) async {
+    if (!challenge.completed) return;
+    final reward = challenge.rewardCfBonus;
+    if (reward <= 0) return;
+
+    final progressRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('weeklyChallengeProgress')
+        .doc(challenge.id);
+
+    var claimed = false;
+    try {
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final snap = await tx.get(progressRef);
+        if (!snap.exists) return;
+        final data = snap.data() ?? const <String, dynamic>{};
+
+        final docWeekId = (data['weekId'] as String? ?? '').trim();
+        if (docWeekId != challenge.weekId) return;
+
+        final already = (data['rewardClaimedWeekId'] as String? ?? '').trim();
+        if (already == challenge.weekId) return;
+
+        tx.set(progressRef, {
+          'rewardClaimedWeekId': challenge.weekId,
+          'rewardClaimedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        claimed = true;
+      });
+    } catch (_) {
+      return;
+    }
+
+    if (!claimed) return;
+    await _applyWeeklyChallengeRewardAcrossWeek(
+      uid: uid,
+      weekId: challenge.weekId,
+      reward: reward,
+    );
+  }
+
+  Future<void> _applyWeeklyChallengeRewardAcrossWeek({
+    required String uid,
+    required String weekId,
+    required int reward,
+  }) async {
+    final start =
+        DateUtilsCF.fromKey(weekId) ?? DateUtilsCF.dateOnly(DateTime.now());
+    final end = start.add(const Duration(days: 6));
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final last = today.isBefore(end) ? today : end;
+    if (last.isBefore(start)) return;
+
+    final totalDays = last.difference(start).inDays + 1;
+    final daysCount = totalDays <= 0 ? 1 : totalDays;
+    final baseAdd = reward ~/ daysCount;
+    final remainder = reward % daysCount;
+
+    final keys = List<String>.generate(
+      daysCount,
+      (i) => DateUtilsCF.toKey(start.add(Duration(days: i))),
+    );
+
+    final history = await _storage.getCfHistory();
+    final todayKey = DateUtilsCF.toKey(DateTime.now());
+    final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+
+    int? newTodayCf;
+
+    for (var i = 0; i < keys.length; i++) {
+      final key = keys[i];
+      final add = baseAdd + (i < remainder ? 1 : 0);
+      if (add <= 0) continue;
+
+      final local = (history[key] ?? 0).clamp(0, 100);
+      var base = local;
+
+      if (key == todayKey) {
+        final fallback = _controller.displayedCfIndex.clamp(0, 100);
+        if (fallback > base) base = fallback;
+        try {
+          final snap = await userRef.collection('dailyStats').doc(key).get();
+          final remote = _asInt(
+            snap.data()?['cfIndex'],
+            fallback: 0,
+          ).clamp(0, 100);
+          if (remote > base) base = remote;
+        } catch (_) {
+          // Ignore read failures; use local/controller base.
+        }
+      } else {
+        try {
+          final snap = await userRef.collection('dailyStats').doc(key).get();
+          final remote = _asInt(
+            snap.data()?['cfIndex'],
+            fallback: 0,
+          ).clamp(0, 100);
+          if (remote > base) base = remote;
+        } catch (_) {
+          // Ignore read failures; use local base.
+        }
+      }
+
+      final next = (base + add).clamp(0, 100);
+
+      await _storage.upsertCfForDate(dateKey: key, cf: next);
+      await userRef.collection('dailyStats').doc(key).set({
+        'dateKey': key,
+        'cfIndex': next,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (key == todayKey) {
+        newTodayCf = next;
+      }
+    }
+
+    if (!mounted) return;
+    if (newTodayCf != null) {
+      setState(() {
+        _userData = _userData.copyWith(currentCFIndex: newTodayCf);
+      });
+    }
   }
 
   int _difficultyPoints(String difficulty) =>
@@ -1892,6 +3127,23 @@ class _HomeScreenState extends State<HomeScreen> {
       text: existing?['name'] as String? ?? '',
     );
     final selectedDays = <int>{1, 2, 3, 4, 5, 6, 7};
+    final rawRepeatDays = existing?['repeatDays'];
+    if (rawRepeatDays is List) {
+      final parsed = rawRepeatDays
+          .map((e) {
+            if (e is int) return e;
+            if (e is num) return e.round();
+            return int.tryParse(e.toString());
+          })
+          .whereType<int>()
+          .where((d) => d >= 1 && d <= 7)
+          .toSet();
+      if (parsed.isNotEmpty) {
+        selectedDays
+          ..clear()
+          ..addAll(parsed);
+      }
+    }
     String difficulty = existing?['difficulty'] as String? ?? 'Media';
 
     final save = await showDialog<bool>(
@@ -1953,6 +3205,19 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancelar'),
             ),
+            if (existing != null)
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                onPressed: () {
+                  final id = existing['id'] as String?;
+                  if (id == null) return;
+                  Navigator.of(context).pop(false);
+                  unawaited(_deleteHabit(id));
+                },
+                child: const Text('Borrar hábito'),
+              ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Guardar'),
@@ -1966,25 +3231,99 @@ class _HomeScreenState extends State<HomeScreen> {
     final name = nameCtrl.text.trim();
     if (name.isEmpty) return;
     final points = _difficultyPoints(difficulty);
+    final repeatDays = selectedDays.toList()..sort();
+    final weekday = DateTime.now().weekday;
+    final shouldShowToday = repeatDays.isEmpty || repeatDays.contains(weekday);
 
     if (existing == null) {
-      await _dashboard.createHabit(
-        uid: uid,
-        name: name,
-        repeatDays: selectedDays.toList()..sort(),
-        cfReward: points,
-      );
-    } else {
-      await _dashboard.updateHabit(
-        uid: uid,
-        habitId: existing['id'] as String,
-        name: name,
-        repeatDays: selectedDays.toList()..sort(),
-        cfReward: points,
-      );
-    }
+      final tempId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+      if (shouldShowToday) {
+        setState(() {
+          _userData = _userData.copyWith(
+            habits: [
+              {
+                'id': tempId,
+                'name': name,
+                'repeatDays': repeatDays,
+                'difficulty': difficulty,
+                'cfPoints': points,
+                'isCompleted': false,
+              },
+              ..._userData.habits,
+            ],
+          );
+        });
+      }
 
-    await _loadRealData();
+      unawaited(() async {
+        try {
+          final createdId = await _dashboard.createHabit(
+            uid: uid,
+            name: name,
+            repeatDays: repeatDays,
+            cfReward: points,
+          );
+          if (!mounted) return;
+          if (!shouldShowToday) return;
+          setState(() {
+            _userData = _userData.copyWith(
+              habits: _userData.habits
+                  .map((h) => (h['id'] == tempId) ? {...h, 'id': createdId} : h)
+                  .toList(growable: false),
+            );
+          });
+        } catch (_) {
+          if (!mounted) return;
+          if (!shouldShowToday) return;
+          setState(() {
+            _userData = _userData.copyWith(
+              habits: _userData.habits
+                  .where((h) => h['id'] != tempId)
+                  .toList(growable: false),
+            );
+          });
+        }
+      }());
+    } else {
+      final habitId = existing['id'] as String;
+      final previousHabits = _userData.habits;
+      final updated = {
+        ...existing,
+        'name': name,
+        'repeatDays': repeatDays,
+        'difficulty': difficulty,
+        'cfPoints': points,
+      };
+
+      final nextHabits = shouldShowToday
+          ? previousHabits
+                .map((h) => (h['id'] == habitId) ? updated : h)
+                .toList(growable: false)
+          : previousHabits
+                .where((h) => h['id'] != habitId)
+                .toList(growable: false);
+
+      setState(() {
+        _userData = _userData.copyWith(habits: nextHabits);
+      });
+
+      unawaited(() async {
+        try {
+          await _dashboard.updateHabit(
+            uid: uid,
+            habitId: habitId,
+            name: name,
+            repeatDays: repeatDays,
+            cfReward: points,
+          );
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _userData = _userData.copyWith(habits: previousHabits);
+          });
+        }
+      }());
+    }
   }
 
   Future<void> _openTaskEditor({Map<String, dynamic>? existing}) async {
@@ -1996,6 +3335,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     String difficulty = existing?['difficulty'] as String? ?? 'Media';
     DateTime? dueDate;
+    final rawDueDate = existing?['dueDateValue'];
+    if (rawDueDate is DateTime) {
+      dueDate = rawDueDate;
+    }
+    final now = DateTime.now();
 
     final save = await showDialog<bool>(
       context: context,
@@ -2031,20 +3375,66 @@ class _HomeScreenState extends State<HomeScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(
                     dueDate == null
-                        ? 'Sin fecha'
-                        : 'Fecha: ${dueDate!.day.toString().padLeft(2, '0')}/${dueDate!.month.toString().padLeft(2, '0')}/${dueDate!.year}',
+                        ? 'Sin fecha ni hora'
+                        : 'Fecha: ${_dueDateEditorLabel(dueDate!)}',
                   ),
-                  trailing: const Icon(Icons.calendar_today_outlined),
+                  subtitle: const Text(
+                    'CotidyFit te avisará a la hora que elijas.',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (dueDate != null)
+                        IconButton(
+                          onPressed: () => setLocal(() => dueDate = null),
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Quitar fecha',
+                        ),
+                      const Icon(Icons.schedule_outlined),
+                    ],
+                  ),
                   onTap: () async {
                     final picked = await showDatePicker(
                       context: context,
-                      initialDate: DateTime.now(),
+                      locale: const Locale('es'),
+                      initialDate: dueDate ?? now,
                       firstDate: DateTime.now().subtract(
                         const Duration(days: 365),
                       ),
                       lastDate: DateTime.now().add(const Duration(days: 3650)),
                     );
-                    if (picked != null) setLocal(() => dueDate = picked);
+                    if (picked == null || !context.mounted) return;
+
+                    final pickedTime = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay.fromDateTime(
+                        dueDate ?? now.add(const Duration(hours: 1)),
+                      ),
+                      builder: (context, child) {
+                        if (child == null) return const SizedBox.shrink();
+                        return Localizations.override(
+                          context: context,
+                          locale: const Locale('es'),
+                          child: MediaQuery(
+                            data: MediaQuery.of(
+                              context,
+                            ).copyWith(alwaysUse24HourFormat: true),
+                            child: child,
+                          ),
+                        );
+                      },
+                    );
+                    if (pickedTime == null) return;
+
+                    setLocal(() {
+                      dueDate = DateTime(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                        pickedTime.hour,
+                        pickedTime.minute,
+                      );
+                    });
                   },
                 ),
               ],
@@ -2055,6 +3445,19 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancelar'),
             ),
+            if (existing != null)
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                onPressed: () {
+                  final id = existing['id'] as String?;
+                  if (id == null) return;
+                  Navigator.of(context).pop(false);
+                  unawaited(_deleteTask(id));
+                },
+                child: const Text('Borrar'),
+              ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Guardar'),
@@ -2070,25 +3473,106 @@ class _HomeScreenState extends State<HomeScreen> {
     final points = _difficultyPoints(difficulty);
 
     if (existing == null) {
-      await _dashboard.createTask(
-        uid: uid,
-        title: title,
-        dueDate: dueDate,
-        cfReward: points,
-        notificationEnabled: true,
-      );
-    } else {
-      await _dashboard.updateTask(
-        uid: uid,
-        taskId: existing['id'] as String,
-        title: title,
-        dueDate: dueDate,
-        cfReward: points,
-        notificationEnabled: true,
-      );
-    }
+      final tempId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+      setState(() {
+        _userData = _userData.copyWith(
+          todos: [
+            {
+              'id': tempId,
+              'name': title,
+              'dueDate': _dueDateLabel(dueDate),
+              'dueDateValue': dueDate,
+              'difficulty': difficulty,
+              'cfPoints': points,
+              'isCompleted': false,
+              'notificationEnabled': dueDate != null,
+            },
+            ..._userData.todos,
+          ],
+        );
+      });
 
-    await _loadRealData();
+      unawaited(() async {
+        try {
+          final createdId = await _dashboard.createTask(
+            uid: uid,
+            title: title,
+            dueDate: dueDate,
+            cfReward: points,
+            notificationEnabled: dueDate != null,
+          );
+          if (!mounted) return;
+          setState(() {
+            _userData = _userData.copyWith(
+              todos: _userData.todos
+                  .map((t) => (t['id'] == tempId) ? {...t, 'id': createdId} : t)
+                  .toList(growable: false),
+            );
+          });
+          await TaskReminderService.instance.syncTaskReminder(
+            taskId: createdId,
+            title: title,
+            dueDate: dueDate,
+            enabled: dueDate != null,
+            completed: false,
+          );
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _userData = _userData.copyWith(
+              todos: _userData.todos
+                  .where((t) => t['id'] != tempId)
+                  .toList(growable: false),
+            );
+          });
+        }
+      }());
+    } else {
+      final taskId = existing['id'] as String;
+      final previousTodos = _userData.todos;
+      final updated = {
+        ...existing,
+        'name': title,
+        'dueDate': _dueDateLabel(dueDate),
+        'dueDateValue': dueDate,
+        'difficulty': difficulty,
+        'cfPoints': points,
+        'notificationEnabled': dueDate != null,
+      };
+
+      setState(() {
+        _userData = _userData.copyWith(
+          todos: previousTodos
+              .map((t) => (t['id'] == taskId) ? updated : t)
+              .toList(growable: false),
+        );
+      });
+
+      unawaited(() async {
+        try {
+          await _dashboard.updateTask(
+            uid: uid,
+            taskId: taskId,
+            title: title,
+            dueDate: dueDate,
+            cfReward: points,
+            notificationEnabled: dueDate != null,
+          );
+          await TaskReminderService.instance.syncTaskReminder(
+            taskId: taskId,
+            title: title,
+            dueDate: dueDate,
+            enabled: dueDate != null,
+            completed: existing['isCompleted'] == true,
+          );
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _userData = _userData.copyWith(todos: previousTodos);
+          });
+        }
+      }());
+    }
   }
 
   Future<void> _toggleHabit(Map<String, dynamic> item, bool checked) async {
@@ -2133,6 +3617,17 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     await _dashboard.setTaskCompleted(uid: uid, taskId: id, completed: checked);
+    final rawDueDate = item['dueDateValue'];
+    final dueDate = rawDueDate is DateTime
+        ? rawDueDate
+        : DateTime.tryParse(rawDueDate?.toString() ?? '');
+    await TaskReminderService.instance.syncTaskReminder(
+      taskId: id,
+      title: (item['name'] as String? ?? 'Tarea pendiente').trim(),
+      dueDate: dueDate,
+      enabled: item['notificationEnabled'] == true,
+      completed: checked,
+    );
     if (checked) {
       final points = (item['cfPoints'] as int? ?? 0);
       await _applyCfBonus(points);
@@ -2157,6 +3652,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     await _dashboard.deleteTask(uid: uid, taskId: id);
+    await TaskReminderService.instance.cancelTaskReminder(id);
     if (!mounted) return;
     setState(() {
       _userData = _userData.copyWith(
@@ -2197,32 +3693,51 @@ class _HomeScreenState extends State<HomeScreen> {
           width: 380,
           child: SingleChildScrollView(
             child: Column(
-              children: _userData.habits
-                  .map(
-                    (h) => ListTile(
-                      leading: Icon(
-                        h['isCompleted'] == true
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
+              children: _userData.habits.map((h) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Icon(
+                          h['isCompleted'] == true
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                        ),
                       ),
-                      title: Text(h['name'] as String? ?? ''),
-                      subtitle: Text(
-                        '${h['difficulty']} · +${h['cfPoints']} CF',
+                      Expanded(
+                        child: InkWell(
+                          onTap: () async {
+                            Navigator.of(context).pop();
+                            await _openHabitEditor(existing: h);
+                            if (!context.mounted) return;
+                            _showAllHabitsDialog();
+                          },
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(h['name'] as String? ?? ''),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${_repeatDaysLabel(h['repeatDays'])} · +${h['cfPoints']} CF',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      trailing: IconButton(
-                        onPressed: () async {
-                          final id = h['id'] as String?;
-                          if (id == null) return;
-                          await _deleteHabit(id);
-                          if (!context.mounted) return;
-                          Navigator.of(context).pop();
-                          _showAllHabitsDialog();
-                        },
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ),
-                  )
-                  .toList(),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -2245,32 +3760,51 @@ class _HomeScreenState extends State<HomeScreen> {
           width: 380,
           child: SingleChildScrollView(
             child: Column(
-              children: _userData.todos
-                  .map(
-                    (t) => ListTile(
-                      leading: Icon(
-                        t['isCompleted'] == true
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
+              children: _userData.todos.map((t) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Icon(
+                          t['isCompleted'] == true
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                        ),
                       ),
-                      title: Text(t['name'] as String? ?? ''),
-                      subtitle: Text(
-                        '${t['dueDate']} · ${t['difficulty']} · +${t['cfPoints']} CF',
+                      Expanded(
+                        child: InkWell(
+                          onTap: () async {
+                            Navigator.of(context).pop();
+                            await _openTaskEditor(existing: t);
+                            if (!context.mounted) return;
+                            _showAllTasksDialog();
+                          },
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(t['name'] as String? ?? ''),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${t['dueDate']} · +${t['cfPoints']} CF',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      trailing: IconButton(
-                        onPressed: () async {
-                          final id = t['id'] as String?;
-                          if (id == null) return;
-                          await _deleteTask(id);
-                          if (!context.mounted) return;
-                          Navigator.of(context).pop();
-                          _showAllTasksDialog();
-                        },
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ),
-                  )
-                  .toList(),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -2289,16 +3823,111 @@ class _HomeScreenState extends State<HomeScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
+        boxShadow: [
+          BoxShadow(
+            color: context.cfShadow,
+            blurRadius: context.cfIsDark ? 24 : 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: child,
     );
   }
 
+  Widget _placeholderLine({double widthFactor = 1, double height = 12}) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: context.cfPrimaryTint,
+          borderRadius: const BorderRadius.all(Radius.circular(999)),
+        ),
+      ),
+    );
+  }
+
+  Widget _loadingListPlaceholder({int items = 3}) {
+    return Column(
+      children: List<Widget>.generate(items, (index) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: index == items - 1 ? 0 : 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                margin: const EdgeInsets.only(top: 4),
+                decoration: BoxDecoration(
+                  color: CFColors.primary.withValues(alpha: 0.09),
+                  borderRadius: const BorderRadius.all(Radius.circular(7)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _placeholderLine(widthFactor: 0.76),
+                    const SizedBox(height: 8),
+                    _placeholderLine(widthFactor: 0.42, height: 10),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _checklistRow({
+    required bool checked,
+    required ValueChanged<bool> onChecked,
+    required VoidCallback onTap,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Checkbox(
+            value: checked,
+            onChanged: (v) => onChecked(v ?? false),
+          ),
+        ),
+        Expanded(
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: const BorderRadius.all(Radius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final greeting = _greetingFor();
     final cfProgress = (_userData.currentCFIndex / 100).clamp(0.0, 1.0);
     final suggestions = _suggestionsForNow();
@@ -2313,13 +3942,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: _loading
+        child: _loading && !_hasVisibleContent
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-                onRefresh: _loadRealData,
+                onRefresh: () => _loadRealData(withLoader: false),
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                   children: [
+                    if (_statusMessage != null) ...[
+                      InlineStatusBanner(message: _statusMessage!),
+                      const SizedBox(height: 10),
+                    ],
                     _block(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2349,10 +3982,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: _userData.moodRegisteredToday
-                                    ? CFColors.primary.withValues(alpha: 0.07)
-                                    : CFColors.primary.withValues(alpha: 0.15),
+                                    ? context.cfPrimaryTint
+                                    : context.cfPrimaryTintStrong,
                                 borderRadius: const BorderRadius.all(
                                   Radius.circular(12),
+                                ),
+                                border: Border.all(
+                                  color: _userData.moodRegisteredToday
+                                      ? context.cfPrimaryTintStrong
+                                      : context.cfPrimary,
                                 ),
                               ),
                               child: Row(
@@ -2367,10 +4005,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                           .bodyLarge
                                           ?.copyWith(
                                             fontWeight: FontWeight.w800,
+                                            color: context.cfTextPrimary,
                                           ),
                                     ),
                                   ),
-                                  const Icon(Icons.chevron_right),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    color: context.cfTextSecondary,
+                                  ),
                                 ],
                               ),
                             ),
@@ -2402,7 +4044,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Column(
                                 children: [
                                   SizedBox(
-                                    height: 188,
+                                    height: () {
+                                      final screenWidth = MediaQuery.sizeOf(
+                                        context,
+                                      ).width;
+                                      final textScale = MediaQuery.textScalerOf(
+                                        context,
+                                      ).scale(1);
+                                      final compact = screenWidth < 392;
+                                      final baseHeight = compact ? 224.0 : 208.0;
+                                      final extraHeight =
+                                          ((textScale - 1) * 56).clamp(0.0, 36.0);
+                                      return baseHeight + extraHeight;
+                                    }(),
                                     child: PageView.builder(
                                       controller: _suggestionPageController,
                                       itemCount: suggestions.length,
@@ -2411,6 +4065,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                       itemBuilder: (context, index) {
                                         final suggestion = suggestions[index];
+                                        final compact =
+                                            MediaQuery.sizeOf(context).width <
+                                            392;
+                                        final textScale = MediaQuery
+                                            .textScalerOf(context)
+                                            .scale(1);
+                                        final microcopyMaxLines = compact
+                                            ? (textScale > 1.08 ? 2 : 3)
+                                            : (textScale > 1.08 ? 3 : 4);
                                         return Padding(
                                           padding: const EdgeInsets.only(
                                             right: 8,
@@ -2441,17 +4104,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                                           14,
                                                         ),
                                                     decoration: BoxDecoration(
-                                                      color: CFColors.primary
-                                                          .withValues(
-                                                            alpha: 0.08,
-                                                          ),
+                                                      color:
+                                                          context.cfSoftSurface,
                                                       borderRadius:
                                                           const BorderRadius.all(
                                                             Radius.circular(22),
                                                           ),
                                                       border: Border.all(
-                                                        color:
-                                                            CFColors.softGray,
+                                                        color: context.cfBorder,
                                                       ),
                                                     ),
                                                     child: Row(
@@ -2460,35 +4120,44 @@ class _HomeScreenState extends State<HomeScreen> {
                                                               .start,
                                                       children: [
                                                         Container(
-                                                          width: 52,
-                                                          height: 52,
+                                                          width: compact
+                                                              ? 48
+                                                              : 52,
+                                                          height: compact
+                                                              ? 48
+                                                              : 52,
                                                           decoration: BoxDecoration(
-                                                            color: CFColors
-                                                                .primary
-                                                                .withValues(
-                                                                  alpha: 0.16,
-                                                                ),
+                                                            color: context
+                                                                .cfPrimaryTint,
                                                             borderRadius:
                                                                 const BorderRadius.all(
                                                                   Radius.circular(
                                                                     16,
                                                                   ),
                                                                 ),
+                                                            border: Border.all(
+                                                              color: context
+                                                                  .cfPrimaryTintStrong,
+                                                            ),
                                                           ),
                                                           child: Icon(
                                                             suggestion['icon']
                                                                     as IconData? ??
                                                                 Icons
                                                                     .auto_awesome_outlined,
-                                                            color: CFColors
-                                                                .primary,
+                                                            color: context
+                                                                .cfPrimary,
                                                           ),
                                                         ),
-                                                        const SizedBox(
-                                                          width: 12,
+                                                        SizedBox(
+                                                          width: compact
+                                                              ? 10
+                                                              : 12,
                                                         ),
                                                         Expanded(
                                                           child: Column(
+                                                            mainAxisSize:
+                                                                MainAxisSize.max,
                                                             crossAxisAlignment:
                                                                 CrossAxisAlignment
                                                                     .start,
@@ -2502,49 +4171,93 @@ class _HomeScreenState extends State<HomeScreen> {
                                                                           4,
                                                                     ),
                                                                 decoration: BoxDecoration(
-                                                                  color: CFColors
-                                                                      .primary
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.18,
-                                                                      ),
+                                                                  color: context
+                                                                      .cfPrimaryTint,
                                                                   borderRadius:
                                                                       const BorderRadius.all(
                                                                         Radius.circular(
                                                                           999,
                                                                         ),
                                                                       ),
+                                                                  border: Border.all(
+                                                                    color: context
+                                                                        .cfPrimaryTintStrong,
+                                                                  ),
                                                                 ),
                                                                 child: Text(
                                                                   suggestion['badge']
                                                                           as String? ??
                                                                       'Ideal para ahora',
-                                                                  style: Theme.of(
-                                                                    context,
-                                                                  ).textTheme.bodyMedium,
+                                                                  maxLines: 1,
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                  style: Theme.of(context)
+                                                                      .textTheme
+                                                                      .bodySmall
+                                                                      ?.copyWith(
+                                                                        color: context
+                                                                            .cfPrimary,
+                                                                        fontWeight:
+                                                                            FontWeight.w800,
+                                                                      ),
                                                                 ),
                                                               ),
-                                                              const SizedBox(
-                                                                height: 8,
+                                                              SizedBox(
+                                                                height: compact
+                                                                    ? 6
+                                                                    : 8,
                                                               ),
-                                                              Text(
-                                                                suggestion['title']
-                                                                        as String? ??
-                                                                    'Sugerencia',
-                                                                style: Theme.of(
-                                                                  context,
-                                                                ).textTheme.titleLarge,
+                                                              Flexible(
+                                                                fit: FlexFit.loose,
+                                                                child: Text(
+                                                                  suggestion['title']
+                                                                          as String? ??
+                                                                      'Sugerencia',
+                                                                  maxLines: 2,
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                  style: Theme.of(context)
+                                                                      .textTheme
+                                                                      .titleMedium
+                                                                      ?.copyWith(
+                                                                        color: context
+                                                                            .cfTextPrimary,
+                                                                        fontWeight:
+                                                                            FontWeight
+                                                                                .w800,
+                                                                      ),
+                                                                ),
                                                               ),
                                                               const SizedBox(
                                                                 height: 4,
                                                               ),
-                                                              Text(
-                                                                suggestion['microcopy']
-                                                                        as String? ??
-                                                                    '',
-                                                                style: Theme.of(
-                                                                  context,
-                                                                ).textTheme.bodyMedium,
+                                                              Expanded(
+                                                                child: Align(
+                                                                  alignment:
+                                                                      Alignment
+                                                                          .topLeft,
+                                                                  child: Text(
+                                                                    suggestion['microcopy']
+                                                                            as String? ??
+                                                                        '',
+                                                                    maxLines:
+                                                                        microcopyMaxLines,
+                                                                    overflow:
+                                                                        TextOverflow
+                                                                            .ellipsis,
+                                                                    style: Theme.of(context)
+                                                                        .textTheme
+                                                                        .bodyMedium
+                                                                        ?.copyWith(
+                                                                          color: context
+                                                                              .cfTextSecondary,
+                                                                          height:
+                                                                              1.35,
+                                                                        ),
+                                                                  ),
+                                                                ),
                                                               ),
                                                             ],
                                                           ),
@@ -2587,10 +4300,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                           height: 8,
                                           decoration: BoxDecoration(
                                             color: i == _suggestionIndex
-                                                ? CFColors.primary
-                                                : CFColors.primary.withValues(
-                                                    alpha: 0.25,
-                                                  ),
+                                                ? context.cfPrimary
+                                                : context.cfPrimaryTintStrong,
                                             borderRadius:
                                                 const BorderRadius.all(
                                                   Radius.circular(99),
@@ -2739,7 +4450,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
                                         children: [
-                                          const Text('Racha'),
+                                          Text(_streakCardLabel()),
                                           Text('${_userData.dailyStreak} días'),
                                         ],
                                       ),
@@ -2847,6 +4558,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
+                    if (_profileModel != null &&
+                        _profileModel!.sex == UserSex.mujer) ...[
+                      HomeWomenCycleSection(profile: _profileModel!),
+                      const SizedBox(height: 10),
+                    ],
                     _block(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2901,41 +4617,54 @@ class _HomeScreenState extends State<HomeScreen> {
                               'Reto semanal',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
-                            const SizedBox(height: 6),
-                            Text(_userData.weeklyChallenge['title'] as String),
-                            const SizedBox(height: 4),
-                            Text(
-                              _userData.weeklyChallenge['description']
-                                  as String,
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: const BorderRadius.all(
-                                Radius.circular(999),
+                            if (_loadingCollections &&
+                                _userData.weeklyChallenge['isActive'] !=
+                                    true) ...[
+                              const SizedBox(height: 10),
+                              _placeholderLine(widthFactor: 0.54),
+                              const SizedBox(height: 8),
+                              _placeholderLine(widthFactor: 0.82),
+                              const SizedBox(height: 8),
+                              _placeholderLine(widthFactor: 0.68),
+                            ] else ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                _userData.weeklyChallenge['title'] as String,
                               ),
-                              child: LinearProgressIndicator(
-                                value:
-                                    ((_userData.weeklyChallenge['userProgress']
-                                                as int) /
-                                            ((_userData.weeklyChallenge['target']
-                                                        as int) <=
-                                                    0
-                                                ? 1
-                                                : (_userData
-                                                          .weeklyChallenge['target']
-                                                      as int)))
-                                        .clamp(0.0, 1.0),
-                                minHeight: 8,
-                                backgroundColor: CFColors.softGray,
-                                valueColor: const AlwaysStoppedAnimation(
-                                  CFColors.primary,
+                              const SizedBox(height: 4),
+                              Text(
+                                _userData.weeklyChallenge['description']
+                                    as String,
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: const BorderRadius.all(
+                                  Radius.circular(999),
+                                ),
+                                child: LinearProgressIndicator(
+                                  value:
+                                      ((_userData.weeklyChallenge['userProgress']
+                                                  as int) /
+                                              ((_userData.weeklyChallenge['target']
+                                                          as int) <=
+                                                      0
+                                                  ? 1
+                                                  : (_userData
+                                                            .weeklyChallenge['target']
+                                                        as int)))
+                                          .clamp(0.0, 1.0),
+                                  minHeight: 8,
+                                  backgroundColor: CFColors.softGray,
+                                  valueColor: const AlwaysStoppedAnimation(
+                                    CFColors.primary,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Recompensa: ${_userData.weeklyChallenge['reward']}',
-                            ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Recompensa (semana): ${_userData.weeklyChallenge['reward']}',
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -2963,26 +4692,21 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           ),
-                          if (habitsPreview.isEmpty)
+                          if (_loadingCollections && habitsPreview.isEmpty)
+                            _loadingListPlaceholder()
+                          else if (habitsPreview.isEmpty)
                             const Text('No tienes hábitos pendientes.')
                           else
-                            ...habitsPreview.map(
-                              (h) => CheckboxListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                value: h['isCompleted'] == true,
-                                onChanged: (v) => _toggleHabit(h, v ?? false),
-                                title: Text(h['name'] as String),
-                                subtitle: Text(
-                                  '${h['difficulty']} · +${h['cfPoints']} CF',
-                                ),
-                                secondary: IconButton(
-                                  onPressed: () =>
-                                      _openHabitEditor(existing: h),
-                                  icon: const Icon(Icons.edit_outlined),
-                                ),
-                              ),
-                            ),
+                            ...habitsPreview.map((h) {
+                              return _checklistRow(
+                                checked: h['isCompleted'] == true,
+                                onChecked: (v) => _toggleHabit(h, v),
+                                onTap: () => _openHabitEditor(existing: h),
+                                title: (h['name'] as String? ?? '').trim(),
+                                subtitle:
+                                    '${_repeatDaysLabel(h['repeatDays'])} · +${h['cfPoints']} CF',
+                              );
+                            }),
                         ],
                       ),
                     ),
@@ -3009,25 +4733,21 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           ),
-                          if (tasksPreview.isEmpty)
+                          if (_loadingCollections && tasksPreview.isEmpty)
+                            _loadingListPlaceholder()
+                          else if (tasksPreview.isEmpty)
                             const Text('No tienes tareas pendientes.')
                           else
-                            ...tasksPreview.map(
-                              (t) => CheckboxListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                value: t['isCompleted'] == true,
-                                onChanged: (v) => _toggleTask(t, v ?? false),
-                                title: Text(t['name'] as String),
-                                subtitle: Text(
-                                  '${t['dueDate']} · ${t['difficulty']} · +${t['cfPoints']} CF',
-                                ),
-                                secondary: IconButton(
-                                  onPressed: () => _openTaskEditor(existing: t),
-                                  icon: const Icon(Icons.edit_outlined),
-                                ),
-                              ),
-                            ),
+                            ...tasksPreview.map((t) {
+                              return _checklistRow(
+                                checked: t['isCompleted'] == true,
+                                onChecked: (v) => _toggleTask(t, v),
+                                onTap: () => _openTaskEditor(existing: t),
+                                title: (t['name'] as String? ?? '').trim(),
+                                subtitle:
+                                    '${t['dueDate']} · +${t['cfPoints']} CF',
+                              );
+                            }),
                         ],
                       ),
                     ),
@@ -3078,37 +4798,172 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _BarsChart extends StatelessWidget {
-  const _BarsChart({required this.values});
+class _StepsHistoryChart extends StatelessWidget {
+  const _StepsHistoryChart({required this.values});
 
   final List<int> values;
+
+  static const _weekdays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
   @override
   Widget build(BuildContext context) {
     if (values.isEmpty) return const SizedBox.shrink();
-    final max = values.reduce((a, b) => a > b ? a : b);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: values
-          .map(
-            (v) => Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  height: (max <= 0 ? 0 : ((v / max) * 110))
-                      .clamp(2, 110)
-                      .toDouble(),
-                  decoration: const BoxDecoration(
-                    color: CFColors.primary,
-                    borderRadius: BorderRadius.all(Radius.circular(6)),
-                  ),
-                ),
+
+    final bars = <BarChartGroupData>[];
+    for (var i = 0; i < values.length; i++) {
+      final v = values[i].clamp(0, 200000).toDouble();
+      bars.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: v,
+              width: values.length > 20 ? 6 : 10,
+              color: CFColors.primary,
+              borderRadius: const BorderRadius.all(Radius.circular(4)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final maxValue = values.reduce((a, b) => a > b ? a : b);
+    final maxY = _stepChartMaxY(maxValue);
+    final last = values.length - 1;
+    final mid = values.length ~/ 2;
+
+    return BarChart(
+      BarChartData(
+        minY: 0,
+        maxY: maxY,
+        barGroups: bars,
+        gridData: FlGridData(
+          show: true,
+          horizontalInterval: maxY <= 4000 ? 1000 : maxY / 4,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) =>
+              FlLine(color: CFColors.softGray, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 52,
+              interval: maxY <= 4000 ? 1000 : maxY / 4,
+              getTitlesWidget: (value, meta) => Text(
+                _formatAxisSteps(value),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-          )
-          .toList(),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 24,
+              getTitlesWidget: (value, meta) {
+                final x = value.toInt();
+                if (x < 0 || x >= values.length) {
+                  return const SizedBox.shrink();
+                }
+
+                String label = '';
+                if (values.length <= 7) {
+                  label = _weekdayLabelForIndex(x, values.length);
+                } else {
+                  if (x == 0) label = _weekdayLabelForIndex(x, values.length);
+                  if (x == mid) {
+                    label = _weekdayLabelForIndex(x, values.length);
+                  }
+                  if (x == last) label = 'Hoy';
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => CFColors.textPrimary,
+            tooltipPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 6,
+            ),
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final x = group.x;
+              final dayLabel = _fullDayLabelForIndex(x, values.length);
+              return BarTooltipItem(
+                '$dayLabel\n${_formatStepCount(rod.toY.round())} pasos',
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+      swapAnimationDuration: const Duration(milliseconds: 300),
     );
+  }
+
+  static double _stepChartMaxY(int maxValue) {
+    if (maxValue <= 0) return 4000;
+    if (maxValue <= 4000) return 4000;
+    final padded = (maxValue * 1.15).ceil();
+    final step = padded <= 10000 ? 1000 : 2000;
+    return ((padded + step - 1) ~/ step * step).toDouble();
+  }
+
+  static String _formatAxisSteps(double value) {
+    return _formatStepCount(value.round());
+  }
+
+  static String _formatStepCount(int value) {
+    final digits = value.abs().toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      final reverseIndex = digits.length - i;
+      buffer.write(digits[i]);
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+    return value < 0 ? '-$buffer' : buffer.toString();
+  }
+
+  static String _weekdayLabelForIndex(int index, int total) {
+    final date = _dateForIndex(index, total);
+    return _weekdays[date.weekday - 1];
+  }
+
+  static String _fullDayLabelForIndex(int index, int total) {
+    final date = _dateForIndex(index, total);
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final dayText = DateUtilsCF.isSameDay(date, today)
+        ? 'Hoy'
+        : '${_weekdays[date.weekday - 1]} ${date.day}/${date.month}';
+    return dayText;
+  }
+
+  static DateTime _dateForIndex(int index, int total) {
+    final today = DateUtilsCF.dateOnly(DateTime.now());
+    final daysAgo = (total - 1 - index).clamp(0, total - 1);
+    return today.subtract(Duration(days: daysAgo));
   }
 }
 

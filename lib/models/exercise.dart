@@ -155,9 +155,45 @@ class ExerciseVariant {
     this.imageUrl,
     this.videoUrl,
   });
+
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'description': description,
+    'imageUrl': imageUrl,
+    'videoUrl': videoUrl,
+  };
+
+  static ExerciseVariant? fromJson(Map<String, Object?> json) {
+    final nameRaw = json['name'];
+    final name =
+        (nameRaw is String ? nameRaw : nameRaw?.toString())?.trim() ?? '';
+    if (name.isEmpty) return null;
+
+    final descriptionRaw = json['description'];
+    final description =
+        (descriptionRaw is String ? descriptionRaw : descriptionRaw?.toString())
+            ?.trim() ??
+        '';
+
+    final imageUrlRaw = json['imageUrl'];
+    final imageUrl =
+        (imageUrlRaw is String ? imageUrlRaw : imageUrlRaw?.toString())?.trim();
+
+    final videoUrlRaw = json['videoUrl'];
+    final videoUrl =
+        (videoUrlRaw is String ? videoUrlRaw : videoUrlRaw?.toString())?.trim();
+
+    return ExerciseVariant(
+      name: name,
+      description: description,
+      imageUrl: imageUrl != null && imageUrl.isNotEmpty ? imageUrl : null,
+      videoUrl: videoUrl != null && videoUrl.isNotEmpty ? videoUrl : null,
+    );
+  }
 }
 
 class Exercise {
+  final String? id;
   final String name;
 
   /// e.g. "12 reps" or "45 s" or "3 min"
@@ -166,9 +202,18 @@ class Exercise {
   final String? imageUrl;
   final String? videoUrl;
   final List<ExerciseVariant> variants;
+  final List<String> howToSteps;
+  final List<String> commonMistakes;
+  final List<String> tips;
 
   /// Primary muscle group for filtering (stored in Firestore as a string).
   final MuscleGroup muscleGroup;
+
+  /// Whether the workout flow should ask the user for weight used.
+  final bool askWeight;
+
+  /// Whether the entered weight should be stored for future metrics.
+  final bool trackWeight;
 
   /// Rep-based metadata (optional).
   final int? sets;
@@ -181,13 +226,19 @@ class Exercise {
   final int? durationSeconds;
 
   const Exercise({
+    this.id,
     required this.name,
     required this.repsOrTime,
     this.description = '',
     this.imageUrl,
     this.videoUrl,
     this.variants = const [],
+    this.howToSteps = const [],
+    this.commonMistakes = const [],
+    this.tips = const [],
     this.muscleGroup = MuscleGroup.otros,
+    this.askWeight = false,
+    this.trackWeight = false,
     this.sets,
     this.reps,
     this.restSeconds,
@@ -195,4 +246,97 @@ class Exercise {
   });
 
   bool get isTimed => durationSeconds != null;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'repsOrTime': repsOrTime,
+    'description': description,
+    'imageUrl': imageUrl,
+    'videoUrl': videoUrl,
+    'variants': variants.map((v) => v.toJson()).toList(),
+    'howToSteps': howToSteps,
+    'commonMistakes': commonMistakes,
+    'tips': tips,
+    'muscleGroup': muscleGroup.firestoreKey,
+    'askWeight': askWeight,
+    'trackWeight': trackWeight,
+    'sets': sets,
+    'reps': reps,
+    'restSeconds': restSeconds,
+    'durationSeconds': durationSeconds,
+  };
+
+  static Exercise? fromJson(Map<String, Object?> json) {
+    String s(Object? v, {String fallback = ''}) {
+      final raw = (v is String ? v : v?.toString())?.trim();
+      return (raw == null || raw.isEmpty) ? fallback : raw;
+    }
+
+    int? i(Object? v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      final raw = (v is String ? v : v?.toString())?.trim();
+      if (raw == null || raw.isEmpty) return null;
+      return int.tryParse(raw);
+    }
+
+    List<String> sl(Object? v) {
+      if (v is! List) return const [];
+      return v
+          .map((e) => (e is String ? e : e?.toString())?.trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    final name = s(json['name']);
+    if (name.isEmpty) return null;
+
+    final repsOrTime = s(json['repsOrTime'], fallback: '');
+    final description = s(json['description']);
+
+    final imageUrl = s(json['imageUrl']);
+    final videoUrl = s(json['videoUrl']);
+    final howToSteps = sl(json['howToSteps']);
+    final commonMistakes = sl(json['commonMistakes']);
+    final tips = sl(json['tips']);
+
+    final variantsRaw = json['variants'];
+    final variants = <ExerciseVariant>[];
+    if (variantsRaw is List) {
+      for (final item in variantsRaw) {
+        if (item is! Map) continue;
+        final map = item.map((k, v) => MapEntry(k.toString(), v));
+        final parsed = ExerciseVariant.fromJson(map);
+        if (parsed != null) variants.add(parsed);
+      }
+    }
+
+    final muscleGroup = muscleGroupFromFirestore(json['muscleGroup']);
+
+    final sets = i(json['sets']);
+    final reps = i(json['reps']);
+    final restSeconds = i(json['restSeconds']);
+    final durationSeconds = i(json['durationSeconds']);
+
+    return Exercise(
+      id: s(json['id']),
+      name: name,
+      repsOrTime: repsOrTime.isEmpty ? '10 reps' : repsOrTime,
+      description: description,
+      imageUrl: imageUrl.isEmpty ? null : imageUrl,
+      videoUrl: videoUrl.isEmpty ? null : videoUrl,
+      variants: variants,
+      howToSteps: howToSteps,
+      commonMistakes: commonMistakes,
+      tips: tips,
+      muscleGroup: muscleGroup,
+      askWeight: json['askWeight'] == true,
+      trackWeight: json['trackWeight'] == true,
+      sets: sets,
+      reps: reps,
+      restSeconds: (restSeconds ?? 0) > 0 ? restSeconds : null,
+      durationSeconds: (durationSeconds ?? 0) > 0 ? durationSeconds : null,
+    );
+  }
 }

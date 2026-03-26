@@ -15,10 +15,10 @@ class DietTemplateCard extends StatelessWidget {
   final VoidCallback onUseTemplate;
 
   IconData get _icon => switch (template.kind) {
-        DietTemplateKind.fatLoss => Icons.local_fire_department_outlined,
-        DietTemplateKind.maintenance => Icons.balance_outlined,
-        DietTemplateKind.bulk => Icons.fitness_center_outlined,
-      };
+    DietTemplateKind.fatLoss => Icons.local_fire_department_outlined,
+    DietTemplateKind.maintenance => Icons.balance_outlined,
+    DietTemplateKind.bulk => Icons.fitness_center_outlined,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -32,17 +32,19 @@ class DietTemplateCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.10),
+                  color: context.cfPrimaryTint,
                   borderRadius: const BorderRadius.all(Radius.circular(14)),
-                  border: Border.all(color: CFColors.softGray),
+                  border: Border.all(color: context.cfPrimaryTintStrong),
                 ),
-                child: Icon(_icon, color: CFColors.primary),
+                child: Icon(_icon, color: context.cfPrimary),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   template.kind.label,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -50,15 +52,24 @@ class DietTemplateCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             'Calorías estimadas: ${template.estimatedCalories} kcal/día',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700, color: CFColors.textPrimary),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: context.cfTextPrimary,
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _MacroChip(label: 'Proteína', value: '${template.macros.proteinPct}%'),
-              _MacroChip(label: 'Carbohidratos', value: '${template.macros.carbsPct}%'),
+              _MacroChip(
+                label: 'Proteína',
+                value: '${template.macros.proteinPct}%',
+              ),
+              _MacroChip(
+                label: 'Carbohidratos',
+                value: '${template.macros.carbsPct}%',
+              ),
               _MacroChip(label: 'Grasas', value: '${template.macros.fatPct}%'),
             ],
           ),
@@ -68,16 +79,26 @@ class DietTemplateCard extends StatelessWidget {
           ...template.exampleDay.map(
             (e) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Text('• ${e.meal}: ${e.example}', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textPrimary)),
+              child: Text(
+                '• ${e.meal}: ${e.example}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: context.cfTextPrimary),
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          Text('Lista de compra automática', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Lista de compra automática',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: template.shoppingList.map((i) => _ItemChip(text: i)).toList(),
+            children: template.shoppingList
+                .map((i) => _ItemChip(text: i))
+                .toList(),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -104,16 +125,27 @@ class _MacroChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800, color: CFColors.textPrimary)),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: context.cfTextPrimary,
+            ),
+          ),
           const SizedBox(width: 6),
-          Text(value, style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: context.cfTextSecondary),
+          ),
         ],
       ),
     );
@@ -130,11 +162,16 @@ class _ItemChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
-      child: Text(text, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textPrimary)),
+      child: Text(
+        text,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: context.cfTextPrimary),
+      ),
     );
   }
 }

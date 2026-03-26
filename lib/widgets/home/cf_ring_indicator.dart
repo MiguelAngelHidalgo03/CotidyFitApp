@@ -3,11 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 
 class CfRingIndicator extends StatefulWidget {
-  const CfRingIndicator({
-    super.key,
-    required this.value,
-    this.size = 68,
-  });
+  const CfRingIndicator({super.key, required this.value, this.size = 68});
 
   final int value; // 0..100
   final double size;
@@ -35,6 +31,7 @@ class _CfRingIndicatorState extends State<CfRingIndicator> {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     final to = widget.value.clamp(0, 100);
 
     return TweenAnimationBuilder<double>(
@@ -57,8 +54,8 @@ class _CfRingIndicatorState extends State<CfRingIndicator> {
                 child: CircularProgressIndicator(
                   value: progress,
                   strokeWidth: 7,
-                  backgroundColor: CFColors.softGray,
-                  valueColor: const AlwaysStoppedAnimation(CFColors.primary),
+                  backgroundColor: context.cfBorder,
+                  valueColor: AlwaysStoppedAnimation(primary),
                 ),
               ),
               AnimatedSwitcher(
@@ -67,15 +64,18 @@ class _CfRingIndicatorState extends State<CfRingIndicator> {
                 switchOutCurve: Curves.easeIn,
                 transitionBuilder: (child, anim) => FadeTransition(
                   opacity: anim,
-                  child: ScaleTransition(scale: Tween(begin: 0.96, end: 1.0).animate(anim), child: child),
+                  child: ScaleTransition(
+                    scale: Tween(begin: 0.96, end: 1.0).animate(anim),
+                    child: child,
+                  ),
                 ),
                 child: Text(
                   '$display',
                   key: ValueKey(display),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: CFColors.primary,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    color: primary,
+                  ),
                 ),
               ),
             ],

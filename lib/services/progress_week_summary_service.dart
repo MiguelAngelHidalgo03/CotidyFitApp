@@ -27,15 +27,15 @@ class ProgressWeekSummaryService {
     CustomMealsFirestoreService? customMealsCloud,
     FirebaseFirestore? db,
     FirebaseAuth? auth,
-  })  : _storage = storage ?? LocalStorageService(),
-        _daily = daily ?? DailyDataService(),
-        _workoutHistory = workoutHistory ?? WorkoutHistoryService(),
-      _workouts = workouts ?? WorkoutService(),
-        _myDay = myDay ?? MyDayRepositoryFactory.create(),
-        _recipes = recipes ?? RecipesRepositoryFactory.create(),
-        _customMealsCloud = customMealsCloud ?? CustomMealsFirestoreService(),
-        _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _storage = storage ?? LocalStorageService(),
+       _daily = daily ?? DailyDataService(),
+       _workoutHistory = workoutHistory ?? WorkoutHistoryService(),
+       _workouts = workouts ?? WorkoutService(),
+       _myDay = myDay ?? MyDayRepositoryFactory.create(),
+       _recipes = recipes ?? RecipesRepositoryFactory.create(),
+       _customMealsCloud = customMealsCloud ?? CustomMealsFirestoreService(),
+       _dbOverride = db,
+       _authOverride = auth;
 
   final LocalStorageService _storage;
   final DailyDataService _daily;
@@ -44,8 +44,11 @@ class ProgressWeekSummaryService {
   final MyDayRepository _myDay;
   final RecipeRepository _recipes;
   final CustomMealsFirestoreService _customMealsCloud;
-  final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _dbOverride;
+  final FirebaseAuth? _authOverride;
+
+  FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   bool get _ready => Firebase.apps.isNotEmpty;
   String? get _uid => _ready ? _auth.currentUser?.uid : null;
@@ -58,14 +61,24 @@ class ProgressWeekSummaryService {
 
     final cfHistory = await _storage.getCfHistory();
     final completedByDate = await _workoutHistory.getCompletedWorkoutsByDate();
-    final weekKeys = [for (var i = 0; i < 7; i++) DateUtilsCF.toKey(weekStart.add(Duration(days: i)))];
+    final weekKeys = [
+      for (var i = 0; i < 7; i++)
+        DateUtilsCF.toKey(weekStart.add(Duration(days: i))),
+    ];
 
     final uid = _uid;
     final cloudDailyStats = <String, Map<String, dynamic>>{};
     if (uid != null) {
       try {
         final docs = await Future.wait(
-          weekKeys.map((k) => _db.collection('users').doc(uid).collection('dailyStats').doc(k).get()),
+          weekKeys.map(
+            (k) => _db
+                .collection('users')
+                .doc(uid)
+                .collection('dailyStats')
+                .doc(k)
+                .get(),
+          ),
         );
         for (var i = 0; i < docs.length; i++) {
           final data = docs[i].data();
@@ -143,13 +156,14 @@ class ProgressWeekSummaryService {
 
       final cloud = cloudDailyStats[key] ?? const <String, dynamic>{};
       final cloudCf = cloud['cfIndex'];
-      final cf = ((cloudCf is int
-                  ? cloudCf
-                  : cloudCf is num
+      final cf =
+          ((cloudCf is int
+                      ? cloudCf
+                      : cloudCf is num
                       ? cloudCf.round()
                       : int.tryParse(cloudCf?.toString() ?? '')) ??
-              (cfHistory[key] ?? 0))
-          .clamp(0, 100);
+                  (cfHistory[key] ?? 0))
+              .clamp(0, 100);
       if (cf > 0) {
         cfSum += cf;
         cfCount += 1;
@@ -168,28 +182,33 @@ class ProgressWeekSummaryService {
 
       final daily = await _daily.getForDateKey(key);
       final eRaw = cloud['energy'];
-      final e = (eRaw is int
-              ? eRaw
-              : eRaw is num
+      final e =
+          (eRaw is int
+                  ? eRaw
+                  : eRaw is num
                   ? eRaw.round()
                   : daily.energy)
-          ?.clamp(1, 5);
+              ?.clamp(1, 5);
       if (e != null) energyValues.add(e.clamp(1, 5));
       final waterRaw = cloud['waterLiters'];
       final cloudWater = waterRaw is num ? waterRaw.toDouble() : null;
       final waterLiters = cloudWater ?? daily.waterLiters;
-      hydrationSum += (waterLiters.isNaN || waterLiters.isInfinite) ? 0 : (waterLiters < 0 ? 0 : waterLiters);
+      hydrationSum += (waterLiters.isNaN || waterLiters.isInfinite)
+          ? 0
+          : (waterLiters < 0 ? 0 : waterLiters);
 
       final mealTypes = entriesByDate[key] ?? const <MealType>[];
-      final customMealsForDay = cloudCustomMealsByDate[key] ?? daily.customMeals;
+      final customMealsForDay =
+          cloudCustomMealsByDate[key] ?? daily.customMeals;
       final customMealTypes = customMealsForDay.map((m) => m.mealType);
       final cloudMeals = cloud['mealsLoggedCount'];
       final cloudMealsInt = cloudMeals is int
           ? cloudMeals
           : cloudMeals is num
-              ? cloudMeals.round()
-              : int.tryParse(cloudMeals?.toString() ?? '');
-      final uniqueMeals = cloudMealsInt ?? <MealType>{...mealTypes, ...customMealTypes}.length;
+          ? cloudMeals.round()
+          : int.tryParse(cloudMeals?.toString() ?? '');
+      final uniqueMeals =
+          cloudMealsInt ?? <MealType>{...mealTypes, ...customMealTypes}.length;
       final capped = uniqueMeals.clamp(0, DailyDataService.mealsTarget);
       mealsLogged += capped;
       if (key == todayKey) {
@@ -223,28 +242,42 @@ class ProgressWeekSummaryService {
       }
     }
 
-    final cfWeekAvg = cfCount == 0 ? 0 : (cfSum / cfCount).round().clamp(0, 100);
+    final cfWeekAvg = cfCount == 0
+        ? 0
+        : (cfSum / cfCount).round().clamp(0, 100);
 
     final hydrationAvgLiters = hydrationSum / 7;
     final hydrationPercent = DailyDataService.waterLitersTarget <= 0
         ? 0
         : ((hydrationAvgLiters / DailyDataService.waterLitersTarget) * 100)
-            .round()
-            .clamp(0, 100);
+              .round()
+              .clamp(0, 100);
 
-    final energyAvg = energyValues.isEmpty ? null : (energyValues.reduce((a, b) => a + b) / energyValues.length);
+    final energyAvg = energyValues.isEmpty
+        ? null
+        : (energyValues.reduce((a, b) => a + b) / energyValues.length);
 
-    final nutritionPercent = mealsTarget <= 0 ? 0 : ((mealsLogged / mealsTarget) * 100).round().clamp(0, 100);
+    final nutritionPercent = mealsTarget <= 0
+        ? 0
+        : ((mealsLogged / mealsTarget) * 100).round().clamp(0, 100);
 
-    final proteinPerMeal = mealEntriesCount == 0 ? 0.0 : (proteinTotal / mealEntriesCount);
+    final proteinPerMeal = mealEntriesCount == 0
+        ? 0.0
+        : (proteinTotal / mealEntriesCount);
 
-    final macroTargets = _macroTargets(activeDays: activeDays, trainedMinutes: trainedMinutes);
+    final macroTargets = _macroTargets(
+      activeDays: activeDays,
+      trainedMinutes: trainedMinutes,
+    );
     final daysDiv = 7;
     final proteinDaily = (proteinTotal / daysDiv).round();
     final carbsDaily = (carbsTotal / daysDiv).round();
     final fatDaily = (fatTotal / daysDiv).round();
 
-    final proteinCompliance = _compliancePercent(proteinDaily, macroTargets.protein);
+    final proteinCompliance = _compliancePercent(
+      proteinDaily,
+      macroTargets.protein,
+    );
     final carbsCompliance = _compliancePercent(carbsDaily, macroTargets.carbs);
     final fatCompliance = _compliancePercent(fatDaily, macroTargets.fat);
 
@@ -261,7 +294,9 @@ class ProgressWeekSummaryService {
     );
 
     final todayCaloriesTarget =
-        (macroTargets.protein * 4) + (macroTargets.carbs * 4) + (macroTargets.fat * 9);
+        (macroTargets.protein * 4) +
+        (macroTargets.carbs * 4) +
+        (macroTargets.fat * 9);
     final todayRecommendation = _todayRecommendation(
       todayMealsLogged: todayMealsLogged,
       todayCalories: todayCalories,
@@ -355,21 +390,33 @@ class ProgressWeekSummaryService {
   }) {
     final adjustments = <String>[];
     if (proteinDaily < (targetProtein * 0.9).round()) {
-      adjustments.add('Sube proteína: +${(targetProtein - proteinDaily).clamp(8, 45)} g/día.');
+      adjustments.add(
+        'Sube proteína: +${(targetProtein - proteinDaily).clamp(8, 45)} g/día.',
+      );
     } else if (proteinDaily > (targetProtein * 1.2).round()) {
-      adjustments.add('Baja proteína: -${(proteinDaily - targetProtein).clamp(8, 40)} g/día.');
+      adjustments.add(
+        'Baja proteína: -${(proteinDaily - targetProtein).clamp(8, 40)} g/día.',
+      );
     }
 
     if (carbsDaily < (targetCarbs * 0.85).round()) {
-      adjustments.add('Sube carbohidratos: +${(targetCarbs - carbsDaily).clamp(15, 70)} g/día.');
+      adjustments.add(
+        'Sube carbohidratos: +${(targetCarbs - carbsDaily).clamp(15, 70)} g/día.',
+      );
     } else if (carbsDaily > (targetCarbs * 1.2).round()) {
-      adjustments.add('Baja carbohidratos: -${(carbsDaily - targetCarbs).clamp(15, 70)} g/día.');
+      adjustments.add(
+        'Baja carbohidratos: -${(carbsDaily - targetCarbs).clamp(15, 70)} g/día.',
+      );
     }
 
     if (fatDaily < (targetFat * 0.85).round()) {
-      adjustments.add('Sube grasas saludables: +${(targetFat - fatDaily).clamp(6, 30)} g/día.');
+      adjustments.add(
+        'Sube grasas saludables: +${(targetFat - fatDaily).clamp(6, 30)} g/día.',
+      );
     } else if (fatDaily > (targetFat * 1.2).round()) {
-      adjustments.add('Baja grasas: -${(fatDaily - targetFat).clamp(6, 30)} g/día.');
+      adjustments.add(
+        'Baja grasas: -${(fatDaily - targetFat).clamp(6, 30)} g/día.',
+      );
     }
 
     if (nutritionPercent >= 75 && proteinPerMeal >= 20) {

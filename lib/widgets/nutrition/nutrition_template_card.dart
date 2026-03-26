@@ -62,7 +62,7 @@ class NutritionTemplateCard extends StatelessWidget {
                           style: Theme.of(context)
                               .textTheme
                               .bodyMedium
-                              ?.copyWith(color: CFColors.textSecondary),
+                          ?.copyWith(color: context.cfTextSecondary),
                         ),
                       ],
                     ],
@@ -74,7 +74,7 @@ class NutritionTemplateCard extends StatelessWidget {
                   onPressed: onToggleLike,
                   icon: Icon(
                     liked ? Icons.favorite : Icons.favorite_border,
-                    color: liked ? CFColors.primary : CFColors.textSecondary,
+                    color: liked ? context.cfPrimary : context.cfTextSecondary,
                   ),
                 ),
               ],
@@ -129,9 +129,9 @@ class _StatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -142,7 +142,7 @@ class _StatChip extends StatelessWidget {
             label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: CFColors.textPrimary,
+                  color: context.cfTextPrimary,
                 ),
           ),
         ],
@@ -161,16 +161,16 @@ class _Pill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Text(
         text,
         style: Theme.of(context)
             .textTheme
             .bodyMedium
-            ?.copyWith(color: CFColors.textPrimary),
+            ?.copyWith(color: context.cfTextPrimary),
       ),
     );
   }
@@ -198,7 +198,7 @@ class _RatingRow extends StatelessWidget {
             icon: Icon(
               i <= v ? Icons.star : Icons.star_border,
               size: 20,
-              color: i <= v ? CFColors.primary : CFColors.textSecondary,
+              color: i <= v ? context.cfPrimary : context.cfTextSecondary,
             ),
           ),
       ],

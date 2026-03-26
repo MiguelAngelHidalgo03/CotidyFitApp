@@ -19,9 +19,16 @@ class HomeRecommendedWorkoutSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(22)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
+        boxShadow: [
+          BoxShadow(
+            color: context.cfShadow,
+            blurRadius: context.cfIsDark ? 24 : 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(16),
       child: workout == null
@@ -32,7 +39,12 @@ class HomeRecommendedWorkoutSection extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Entrenamiento recomendado', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  'Entrenamiento recomendado',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 Text(
                   workout!.name,
@@ -49,7 +61,8 @@ class HomeRecommendedWorkoutSection extends StatelessWidget {
                 Text(
                   reason,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: CFColors.textSecondary,
+                        color: context.cfTextSecondary,
+                        height: 1.35,
                       ),
                 ),
                 const SizedBox(height: 12),

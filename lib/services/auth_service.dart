@@ -1,7 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+
+import 'account_local_data_service.dart';
 
 class AuthCancelledException implements Exception {
   final String message;
@@ -55,27 +58,93 @@ class AuthPasskeyException implements Exception {
 }
 
 class AuthService {
-  final FirebaseAuth _auth;
+  final FirebaseAuth? _authOverride;
   final GoogleSignIn _googleSignIn;
 
   AuthService({FirebaseAuth? auth, GoogleSignIn? googleSignIn})
-      : _auth = auth ?? FirebaseAuth.instance,
-        _googleSignIn = googleSignIn ?? GoogleSignIn();
+    : _authOverride = auth,
+      _googleSignIn = googleSignIn ?? GoogleSignIn();
 
-  Stream<User?> authStateChanges() => _auth.authStateChanges();
+  bool get _ready => Firebase.apps.isNotEmpty;
 
-  User? get currentUser => _auth.currentUser;
+  FirebaseAuth get _auth {
+    final override = _authOverride;
+    if (override != null) return override;
+    if (!_ready) throw StateError('Firebase not initialized');
+    return FirebaseAuth.instance;
+  }
+
+  Stream<User?> authStateChanges() {
+    final override = _authOverride;
+    if (override != null) return override.authStateChanges();
+    if (!_ready) return Stream<User?>.value(null);
+    return FirebaseAuth.instance.authStateChanges();
+  }
+
+  User? get currentUser {
+    final override = _authOverride;
+    if (override != null) return override.currentUser;
+    if (!_ready) return null;
+    return FirebaseAuth.instance.currentUser;
+  }
+
+  Future<User?> restoreSessionIfPossible() async {
+    final existing = currentUser;
+    if (existing != null) return existing;
+    if (!_ready) return null;
+    if (kIsWeb || !_supportsNativeGoogleSignIn()) return currentUser;
+
+    GoogleSignInAccount? account;
+    try {
+      account = await _googleSignIn.signInSilently();
+    } catch (_) {
+      return currentUser;
+    }
+    if (account == null) return currentUser;
+
+    GoogleSignInAuthentication auth;
+    try {
+      auth = await account.authentication;
+    } catch (_) {
+      return currentUser;
+    }
+
+    final accessToken = auth.accessToken;
+    final idToken = auth.idToken;
+    if ((accessToken == null || accessToken.isEmpty) &&
+        (idToken == null || idToken.isEmpty)) {
+      return currentUser;
+    }
+
+    try {
+      final cred = await _auth.signInWithCredential(
+        GoogleAuthProvider.credential(
+          accessToken: accessToken,
+          idToken: idToken,
+        ),
+      );
+      await _ensureDisplayNameFromEmail(cred.user);
+      return cred.user;
+    } catch (_) {
+      return currentUser;
+    }
+  }
 
   Future<UserCredential> registerWithEmailPassword({
     required String email,
     required String password,
   }) async {
     final cleanEmail = email.trim();
-    final cred = await _auth.createUserWithEmailAndPassword(email: cleanEmail, password: password);
+    final cred = await _auth.createUserWithEmailAndPassword(
+      email: cleanEmail,
+      password: password,
+    );
 
     final user = cred.user;
     final derived = _deriveNameFromEmail(cleanEmail);
-    if (user != null && (user.displayName ?? '').trim().isEmpty && derived.isNotEmpty) {
+    if (user != null &&
+        (user.displayName ?? '').trim().isEmpty &&
+        derived.isNotEmpty) {
       try {
         await user.updateDisplayName(derived);
         await user.reload();
@@ -91,12 +160,13 @@ class AuthService {
     required String email,
     required String password,
   }) {
-    return _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+    return _auth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
   }
 
-  Future<void> sendPasswordResetEmail({
-    required String email,
-  }) async {
+  Future<void> sendPasswordResetEmail({required String email}) async {
     // Ensures Firebase Auth emails are localized.
     _auth.setLanguageCode('es');
     await _auth.sendPasswordResetEmail(email: email.trim());
@@ -108,7 +178,9 @@ class AuthService {
       try {
         return await _signInWithGoogleProviderPopup();
       } catch (e) {
-        if (e is AuthCancelledException || e is AuthLinkRequiredException) rethrow;
+        if (e is AuthCancelledException || e is AuthLinkRequiredException) {
+          rethrow;
+        }
         final s = e.toString();
         if (_looksLikePasskeyError(s)) {
           return await _signInWithGoogleProviderPopup(prompt: 'login');
@@ -126,13 +198,18 @@ class AuthService {
         _throwLinkRequiredIfNeeded(e);
         rethrow;
       } catch (e) {
-        if (e is AuthCancelledException || e is AuthLinkRequiredException) rethrow;
+        if (e is AuthCancelledException || e is AuthLinkRequiredException) {
+          rethrow;
+        }
         final s = e.toString();
         if (_looksLikePasskeyError(s)) {
           try {
             return await _signInWithGoogleProviderFallback(prompt: 'login');
           } catch (forcedErr) {
-            if (forcedErr is AuthCancelledException || forcedErr is AuthLinkRequiredException) rethrow;
+            if (forcedErr is AuthCancelledException ||
+                forcedErr is AuthLinkRequiredException) {
+              rethrow;
+            }
             throw const AuthPasskeyException(
               'Tu passkey falló en este entorno (Windows/emulador). Prueba con contraseña o en un móvil real.',
             );
@@ -216,6 +293,8 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    if (_authOverride == null && !_ready) return;
+
     await _auth.signOut();
     try {
       await _googleSignIn.signOut();
@@ -224,13 +303,19 @@ class AuthService {
     }
   }
 
+  Future<void> clearLocalAccountData() async {
+    await AccountLocalDataService().clearAllLocalAccountData();
+  }
+
   String _deriveNameFromEmail(String email) {
     final at = email.indexOf('@');
     if (at <= 0) return '';
     return email.substring(0, at).trim();
   }
 
-  Future<UserCredential> _signInWithGoogleProviderPopup({String prompt = 'select_account'}) async {
+  Future<UserCredential> _signInWithGoogleProviderPopup({
+    String prompt = 'select_account',
+  }) async {
     final provider = GoogleAuthProvider();
     provider.setCustomParameters({'prompt': prompt});
     late final UserCredential cred;
@@ -244,7 +329,9 @@ class AuthService {
     return cred;
   }
 
-  Future<UserCredential> _signInWithGoogleProviderFallback({String prompt = 'select_account'}) async {
+  Future<UserCredential> _signInWithGoogleProviderFallback({
+    String prompt = 'select_account',
+  }) async {
     final provider = GoogleAuthProvider();
     provider.setCustomParameters({'prompt': prompt});
     final cred = await _auth.signInWithProvider(provider);
@@ -268,14 +355,21 @@ class AuthService {
       _throwMappedGoogleSignInPlatformException(e);
     } catch (e) {
       final s = e.toString();
-      if (_looksLikeGoogleConfigError(s)) throw const AuthGoogleConfigurationException();
-      if (_looksLikeGoogleTransientError(s)) throw const AuthGoogleTransientException();
+      if (_looksLikeGoogleConfigError(s)) {
+        throw const AuthGoogleConfigurationException();
+      }
+      if (_looksLikeGoogleTransientError(s)) {
+        throw const AuthGoogleTransientException();
+      }
       rethrow;
     }
     final accessToken = auth.accessToken;
     final idToken = auth.idToken;
-    if ((accessToken == null || accessToken.isEmpty) && (idToken == null || idToken.isEmpty)) {
-      throw const AuthGoogleConfigurationException('Google devolvió tokens vacíos.');
+    if ((accessToken == null || accessToken.isEmpty) &&
+        (idToken == null || idToken.isEmpty)) {
+      throw const AuthGoogleConfigurationException(
+        'Google devolvió tokens vacíos.',
+      );
     }
 
     final credential = GoogleAuthProvider.credential(
@@ -358,7 +452,9 @@ class AuthService {
 
   int? _extractGoogleApiExceptionCode(String input) {
     final s = input.toLowerCase();
-    final m = RegExp(r'(?:api\s*exception|apiexception)\s*:\s*(\d+)').firstMatch(s);
+    final m = RegExp(
+      r'(?:api\s*exception|apiexception)\s*:\s*(\d+)',
+    ).firstMatch(s);
     if (m != null) return int.tryParse(m.group(1) ?? '');
     final m2 = RegExp(r'\b(12500|12501|12502)\b').firstMatch(s);
     if (m2 != null) return int.tryParse(m2.group(1) ?? '');

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +12,9 @@ class WorkoutHistoryService {
   static const _kCompletedWorkoutIdsByDateKey = 'cf_completed_workout_ids_by_date_json';
   static const _kCloudMigrationPrefix =
       'cf_completed_workouts_cloud_migrated_v1_';
+  static const _kCloudFetchMarkerPrefix =
+      'cf_completed_workouts_cloud_last_fetch_ms_v1_';
+  static const _kCloudFetchTtl = Duration(hours: 6);
 
   final FirebaseFirestore? _dbOverride;
   final FirebaseAuth? _authOverride;
@@ -30,71 +34,88 @@ class WorkoutHistoryService {
   }
 
   Future<Map<String, String>> getCompletedWorkoutsByDate() async {
+    final local = await _readLocalMap();
     final uid = _uid;
     if (uid != null) {
-      await _migrateLocalHistoryToCloudIfNeeded(uid);
-
-      final qs = await _historyColForUid(uid).get();
-      final out = <String, String>{};
-      for (final doc in qs.docs) {
-        final data = doc.data();
-        final workoutName = data['workoutName'];
-        if (workoutName is! String || workoutName.trim().isEmpty) continue;
-
-        final dateKeyRaw = data['dateKey'];
-        final dateKey = dateKeyRaw is String && dateKeyRaw.trim().isNotEmpty
-            ? dateKeyRaw
-            : doc.id;
-
-        out[dateKey] = workoutName.trim();
+      unawaited(_migrateLocalHistoryToCloudIfNeeded(uid));
+      if (local.isNotEmpty) {
+        unawaited(_refreshCloudHistoryIfStale(uid));
+        return local;
       }
 
-      await _cacheMapLocally(out);
-      return out;
+      final cloud = await _fetchCloudHistoryMaps(uid);
+      await _cacheMapLocally(cloud.names);
+      await _cacheIdsMapLocally(cloud.ids);
+      return cloud.names;
     }
 
-    final p = await _prefs();
-    final raw = p.getString(_kCompletedWorkoutsByDateKey);
-    if (raw == null || raw.trim().isEmpty) return {};
-
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return {};
-
-    final out = <String, String>{};
-    for (final e in decoded.entries) {
-      final k = e.key;
-      final v = e.value;
-      if (k is String && v is String) out[k] = v;
-    }
-    return out;
+    return local;
   }
 
   Future<Map<String, String>> getCompletedWorkoutIdsByDate() async {
+    final local = await _readLocalIdsMap();
     final uid = _uid;
     if (uid != null) {
-      await _migrateLocalHistoryToCloudIfNeeded(uid);
-
-      final qs = await _historyColForUid(uid).get();
-      final out = <String, String>{};
-      for (final doc in qs.docs) {
-        final data = doc.data();
-
-        final workoutId = (data['workoutId'] as String?)?.trim() ?? '';
-        if (workoutId.isEmpty) continue;
-
-        final dateKeyRaw = data['dateKey'];
-        final dateKey = dateKeyRaw is String && dateKeyRaw.trim().isNotEmpty
-            ? dateKeyRaw
-            : doc.id;
-
-        out[dateKey] = workoutId;
+      unawaited(_migrateLocalHistoryToCloudIfNeeded(uid));
+      if (local.isNotEmpty) {
+        unawaited(_refreshCloudHistoryIfStale(uid));
+        return local;
       }
 
-      await _cacheIdsMapLocally(out);
-      return out;
+      final cloud = await _fetchCloudHistoryMaps(uid);
+      await _cacheMapLocally(cloud.names);
+      await _cacheIdsMapLocally(cloud.ids);
+      return cloud.ids;
     }
 
-    return _readLocalIdsMap();
+    return local;
+  }
+
+  Future<({Map<String, String> names, Map<String, String> ids})>
+      _fetchCloudHistoryMaps(String uid) async {
+    final qs = await _historyColForUid(uid).get();
+    final names = <String, String>{};
+    final ids = <String, String>{};
+
+    for (final doc in qs.docs) {
+      final data = doc.data();
+
+      final dateKeyRaw = data['dateKey'];
+      final dateKey = dateKeyRaw is String && dateKeyRaw.trim().isNotEmpty
+          ? dateKeyRaw
+          : doc.id;
+
+      final workoutName = data['workoutName'];
+      if (workoutName is String && workoutName.trim().isNotEmpty) {
+        names[dateKey] = workoutName.trim();
+      }
+
+      final workoutId = (data['workoutId'] as String?)?.trim() ?? '';
+      if (workoutId.isNotEmpty) {
+        ids[dateKey] = workoutId;
+      }
+    }
+
+    return (names: names, ids: ids);
+  }
+
+  Future<void> _refreshCloudHistoryIfStale(String uid) async {
+    try {
+      final p = await _prefs();
+      final markerKey = '$_kCloudFetchMarkerPrefix$uid';
+      final last = p.getInt(markerKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - last >= 0 && now - last < _kCloudFetchTtl.inMilliseconds) {
+        return;
+      }
+
+      final cloud = await _fetchCloudHistoryMaps(uid);
+      await _cacheMapLocally(cloud.names);
+      await _cacheIdsMapLocally(cloud.ids);
+      await p.setInt(markerKey, now);
+    } catch (_) {
+      // best-effort
+    }
   }
 
   Future<void> upsertCompletedWorkoutForDate({

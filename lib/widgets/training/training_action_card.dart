@@ -27,6 +27,7 @@ class TrainingActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return ProgressSectionCard(
       backgroundColor: backgroundColor,
       borderColor: borderColor,
@@ -45,10 +46,11 @@ class TrainingActionCard extends StatelessWidget {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: CFColors.primary.withValues(alpha: 0.10),
+                      color: context.cfPrimaryTint,
                       borderRadius: const BorderRadius.all(Radius.circular(18)),
+                      border: Border.all(color: context.cfPrimaryTintStrong),
                     ),
-                    child: Icon(icon, color: CFColors.primary),
+                    child: Icon(icon, color: primary),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -63,16 +65,15 @@ class TrainingActionCard extends StatelessWidget {
                         const SizedBox(height: 6),
                         Text(
                           subtitle,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(height: 1.35),
                         ),
                       ],
                     ),
                   ),
                   trailing ??
-                      const Icon(
-                        Icons.chevron_right,
-                        color: CFColors.textSecondary,
-                      ),
+                      Icon(Icons.chevron_right, color: context.cfTextSecondary),
                 ],
               ),
               if (footer != null) ...[const SizedBox(height: 12), footer!],

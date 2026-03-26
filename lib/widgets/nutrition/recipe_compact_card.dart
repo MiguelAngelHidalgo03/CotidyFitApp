@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/recipe_model.dart';
 import '../progress/progress_section_card.dart';
+import 'recipe_media.dart';
 
 class RecipeCompactCard extends StatelessWidget {
   const RecipeCompactCard({
@@ -18,6 +19,7 @@ class RecipeCompactCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = context.cfPrimary;
     return ProgressSectionCard(
       padding: const EdgeInsets.all(12),
       child: InkWell(
@@ -25,15 +27,12 @@ class RecipeCompactCard extends StatelessWidget {
         borderRadius: const BorderRadius.all(Radius.circular(18)),
         child: Row(
           children: [
-            Container(
+            RecipeMedia(
+              imageUrl: recipe.imageUrl,
               width: 54,
               height: 54,
-              decoration: BoxDecoration(
-                color: CFColors.primary.withValues(alpha: 0.10),
-                borderRadius: const BorderRadius.all(Radius.circular(16)),
-                border: Border.all(color: CFColors.softGray),
-              ),
-              child: const Icon(Icons.restaurant_menu, color: CFColors.primary),
+              borderRadius: 16,
+              iconSize: 22,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -67,7 +66,7 @@ class RecipeCompactCard extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.star, size: 16, color: CFColors.primary),
+                    Icon(Icons.star, size: 16, color: primary),
                     const SizedBox(width: 4),
                     Text(
                       recipe.ratingAvg.toStringAsFixed(1),

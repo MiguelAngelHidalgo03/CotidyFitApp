@@ -39,10 +39,7 @@ class FoodPreset {
 }
 
 class CustomMealDraftResult {
-  const CustomMealDraftResult({
-    required this.mealType,
-    required this.meal,
-  });
+  const CustomMealDraftResult({required this.mealType, required this.meal});
 
   final MealType mealType;
   final CustomMealModel meal;
@@ -129,7 +126,9 @@ class _CustomMealBottomSheetState extends State<CustomMealBottomSheet> {
       grasas: _fatTotal,
     );
 
-    Navigator.of(context).pop(CustomMealDraftResult(mealType: _mealType, meal: meal));
+    Navigator.of(
+      context,
+    ).pop(CustomMealDraftResult(mealType: _mealType, meal: meal));
   }
 
   @override
@@ -154,7 +153,9 @@ class _CustomMealBottomSheetState extends State<CustomMealBottomSheet> {
                     Expanded(
                       child: Text(
                         'Agregar comida personalizada',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                     IconButton(
@@ -175,13 +176,12 @@ class _CustomMealBottomSheetState extends State<CustomMealBottomSheet> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<MealType>(
                   initialValue: _mealType,
-                  decoration: const InputDecoration(labelText: 'Tipo de comida'),
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de comida',
+                  ),
                   items: [
                     for (final m in MealType.values)
-                      DropdownMenuItem(
-                        value: m,
-                        child: Text(m.label),
-                      ),
+                      DropdownMenuItem(value: m, child: Text(m.label)),
                   ],
                   onChanged: (v) {
                     if (v == null) return;
@@ -194,7 +194,9 @@ class _CustomMealBottomSheetState extends State<CustomMealBottomSheet> {
                     Expanded(
                       child: Text(
                         'Alimentos',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                     TextButton.icon(
@@ -211,26 +213,40 @@ class _CustomMealBottomSheetState extends State<CustomMealBottomSheet> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 for (var i = 0; i < _items.length; i++) ...[
-                  _FoodRow(
-                    item: _items[i],
-                    onRemove: () => _removeAt(i),
-                  ),
+                  _FoodRow(item: _items[i], onRemove: () => _removeAt(i)),
                   if (i != _items.length - 1) const SizedBox(height: 10),
                 ],
                 const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: CFColors.background,
+                    color: context.cfSoftSurface,
                     borderRadius: const BorderRadius.all(Radius.circular(16)),
-                    border: Border.all(color: CFColors.softGray),
+                    border: Border.all(color: context.cfBorder),
                   ),
                   child: Row(
                     children: [
-                      Expanded(child: _TotalStat(label: 'Kcal', value: '$_kcalTotal')),
-                      Expanded(child: _TotalStat(label: 'Proteína', value: '${_proteinTotal}g')),
-                      Expanded(child: _TotalStat(label: 'Carbohidratos', value: '${_carbsTotal}g')),
-                      Expanded(child: _TotalStat(label: 'Grasas', value: '${_fatTotal}g')),
+                      Expanded(
+                        child: _TotalStat(label: 'Kcal', value: '$_kcalTotal'),
+                      ),
+                      Expanded(
+                        child: _TotalStat(
+                          label: 'Proteína',
+                          value: '${_proteinTotal}g',
+                        ),
+                      ),
+                      Expanded(
+                        child: _TotalStat(
+                          label: 'Carbohidratos',
+                          value: '${_carbsTotal}g',
+                        ),
+                      ),
+                      Expanded(
+                        child: _TotalStat(
+                          label: 'Grasas',
+                          value: '${_fatTotal}g',
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -262,9 +278,9 @@ class _FoodRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         children: [
@@ -274,7 +290,9 @@ class _FoodRow extends StatelessWidget {
               children: [
                 Text(
                   item.name,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -287,7 +305,7 @@ class _FoodRow extends StatelessWidget {
           IconButton(
             tooltip: 'Quitar',
             onPressed: onRemove,
-            icon: const Icon(Icons.delete_outline, color: CFColors.textSecondary),
+            icon: Icon(Icons.delete_outline, color: context.cfTextSecondary),
           ),
         ],
       ),
@@ -310,7 +328,10 @@ class _TotalStat extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           value,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900, color: CFColors.textPrimary),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w900,
+            color: context.cfTextPrimary,
+          ),
         ),
       ],
     );
@@ -340,8 +361,7 @@ class _PresetPickerSheetState extends State<_PresetPickerSheet> {
 
   Future<void> _loadFoods() async {
     // Guard: skip Firestore when not authenticated.
-    if (Firebase.apps.isEmpty ||
-        FirebaseAuth.instance.currentUser == null) {
+    if (Firebase.apps.isEmpty || FirebaseAuth.instance.currentUser == null) {
       if (!mounted) return;
       setState(() {
         _allFoods = const [];
@@ -351,15 +371,15 @@ class _PresetPickerSheetState extends State<_PresetPickerSheet> {
     }
 
     try {
-      final globalFoods = await _globalFoodsService
-          .getAllFoods()
-          .timeout(const Duration(seconds: 10));
+      final globalFoods = await _globalFoodsService.getAllFoods().timeout(
+        const Duration(seconds: 10),
+      );
 
       List<FoodModel> customFoods = const [];
       try {
-        customFoods = await _customFoodsService
-            .getAll()
-            .timeout(const Duration(seconds: 10));
+        customFoods = await _customFoodsService.getAll().timeout(
+          const Duration(seconds: 10),
+        );
       } catch (e) {
         debugPrint('_PresetPickerSheet: custom foods error (ignored): $e');
       }
@@ -412,9 +432,9 @@ class _PresetPickerSheetState extends State<_PresetPickerSheet> {
       await _customFoodsService.add(result);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar alimento: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al guardar alimento: $e')));
       // Still let user pick it even if save fails
     }
 
@@ -452,7 +472,10 @@ class _PresetPickerSheetState extends State<_PresetPickerSheet> {
               Row(
                 children: [
                   Expanded(
-                    child: Text('Añadir alimento', style: Theme.of(context).textTheme.titleLarge),
+                    child: Text(
+                      'Añadir alimento',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                   ),
                   IconButton(
                     tooltip: 'Cerrar',
@@ -497,46 +520,63 @@ class _PresetPickerSheetState extends State<_PresetPickerSheet> {
                   ),
                 )
               else
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final p = list[index];
-                    return InkWell(
-                      onTap: () => Navigator.of(context).pop(p),
-                      borderRadius: const BorderRadius.all(Radius.circular(16)),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: CFColors.surface,
-                          borderRadius: const BorderRadius.all(Radius.circular(16)),
-                          border: Border.all(color: CFColors.softGray),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: list.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final p = list[index];
+                      return InkWell(
+                        onTap: () => Navigator.of(context).pop(p),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(16),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(p.name, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900)),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Por 100g · ${p.kcalPer100g} kcal · P ${p.proteinPer100g}g · C ${p.carbsPer100g}g · G ${p.fatPer100g}g',
-                                    style: Theme.of(context).textTheme.bodyMedium,
-                                  ),
-                                ],
-                              ),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: context.cfSurface,
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(16),
                             ),
-                            const Icon(Icons.chevron_right, color: CFColors.textSecondary),
-                          ],
+                            border: Border.all(color: context.cfBorder),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      p.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Por 100g · ${p.kcalPer100g} kcal · P ${p.proteinPer100g}g · C ${p.carbsPer100g}g · G ${p.fatPer100g}g',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right,
+                                color: context.cfTextSecondary,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -597,7 +637,8 @@ class _CreateCustomFoodDialog extends StatefulWidget {
   const _CreateCustomFoodDialog();
 
   @override
-  State<_CreateCustomFoodDialog> createState() => _CreateCustomFoodDialogState();
+  State<_CreateCustomFoodDialog> createState() =>
+      _CreateCustomFoodDialogState();
 }
 
 class _CreateCustomFoodDialogState extends State<_CreateCustomFoodDialog> {
@@ -620,9 +661,9 @@ class _CreateCustomFoodDialogState extends State<_CreateCustomFoodDialog> {
   void _save() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Introduce un nombre.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Introduce un nombre.')));
       return;
     }
     final kcal = int.tryParse(_kcalCtrl.text.trim());
@@ -636,14 +677,16 @@ class _CreateCustomFoodDialogState extends State<_CreateCustomFoodDialog> {
       return;
     }
 
-    Navigator.of(context).pop(FoodModel(
-      id: '',
-      name: name,
-      kcalPer100g: kcal,
-      proteinPer100g: protein,
-      carbsPer100g: carbs,
-      fatPer100g: fat,
-    ));
+    Navigator.of(context).pop(
+      FoodModel(
+        id: '',
+        name: name,
+        kcalPer100g: kcal,
+        proteinPer100g: protein,
+        carbsPer100g: carbs,
+        fatPer100g: fat,
+      ),
+    );
   }
 
   @override
@@ -695,10 +738,7 @@ class _CreateCustomFoodDialogState extends State<_CreateCustomFoodDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text('Guardar'),
-        ),
+        FilledButton(onPressed: _save, child: const Text('Guardar')),
       ],
     );
   }

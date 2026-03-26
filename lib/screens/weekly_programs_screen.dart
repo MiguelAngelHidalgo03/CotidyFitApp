@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
@@ -5,9 +7,11 @@ import '../models/user_profile.dart';
 import '../models/weekly_program_model.dart';
 import '../models/workout.dart';
 import '../models/workout_plan.dart';
+import '../services/cycle_recommendation_service.dart';
 import '../services/profile_service.dart';
 import '../services/training_firestore_service.dart';
 import '../services/training_recommendation_service.dart';
+import '../services/women_cycle_service.dart';
 import '../services/weekly_programs_service.dart';
 import '../services/workout_plan_service.dart';
 import '../services/workout_service.dart';
@@ -28,6 +32,7 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
   final _workouts = WorkoutService();
   final _profileService = ProfileService();
   final _trainingFirestore = TrainingFirestoreService();
+  final _womenCycleService = WomenCycleService();
 
   bool _saving = false;
   bool _loading = true;
@@ -36,6 +41,7 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
   UserProfile? _profile;
   List<WeeklyProgramModel> _items = const [];
   WeekPlan? _currentWeekPlan;
+  WomenCycleData? _cycleData;
 
   final Set<WorkoutPlace> _places = {};
   final Set<WorkoutGoal> _goals = {};
@@ -56,12 +62,14 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
     try {
       await _workouts.ensureLoaded();
       final profile = await _profileService.getProfile();
+      final cycle = await _womenCycleService.getCurrentCycle();
       final items = await _programs.getPrograms();
       final weekStart = _mondayOf(DateUtilsCF.dateOnly(DateTime.now()));
       final plan = await _plans.getPlanForWeekKey(DateUtilsCF.toKey(weekStart));
       if (!mounted) return;
       setState(() {
         _profile = profile;
+        _cycleData = cycle;
         _items = items;
         _currentWeekPlan = plan;
       });
@@ -90,15 +98,15 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
       final existing = await _plans.getPlanForWeekKey(weekKey);
       final baseAssignments = <int, String>{...?(existing?.assignments)};
 
-      final generatedAssignments =
-          await _trainingFirestore.buildUserWeekAssignmentsFromProgram(
-        programId: program.id,
-      );
+      final generatedAssignments = await _trainingFirestore
+          .buildUserWeekAssignmentsFromProgram(programId: program.id);
       if (generatedAssignments.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se pudo asignar el programa. Verifica sesión y días configurados.'),
+            content: Text(
+              'No se pudo asignar el programa. Verifica sesión y días configurados.',
+            ),
           ),
         );
         return;
@@ -107,18 +115,18 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
         baseAssignments[entry.key] = entry.value;
       }
 
-      final updated = (existing ??
-              WeekPlan(
-                weekStart: weekStart,
-                assignments: const {},
-              ))
-          .copyWith(weekStart: weekStart, assignments: baseAssignments);
+      final updated =
+          (existing ?? WeekPlan(weekStart: weekStart, assignments: const {}))
+              .copyWith(weekStart: weekStart, assignments: baseAssignments);
 
       await _plans.upsertPlan(updated);
-      await _workouts.refreshFromFirestore();
       if (!mounted) return;
+      setState(() => _currentWeekPlan = updated);
+      unawaited(_workouts.refreshFromFirestore());
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Plan semanal agregado a tu semana actual.')),
+        const SnackBar(
+          content: Text('Plan semanal agregado a tu semana actual.'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -127,7 +135,9 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
 
   void _openDetail(WeeklyProgramModel p) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => WeeklyProgramDetailScreen(programId: p.id)),
+      MaterialPageRoute(
+        builder: (_) => WeeklyProgramDetailScreen(programId: p.id),
+      ),
     );
   }
 
@@ -147,9 +157,17 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
     switch (equipment.trim().toLowerCase()) {
       case 'gym':
         return WorkoutPlace.gimnasio;
+      case 'casa con material':
+      case 'casa_con_material':
+      case 'home':
+        return WorkoutPlace.casaConMaterial;
       case 'parque':
+      case 'aire libre':
+      case 'outdoor':
         return WorkoutPlace.parqueCalistenia;
       case 'casa':
+      case 'sin material':
+      case 'sin_material':
       case 'none':
       default:
         return WorkoutPlace.casaSinMaterial;
@@ -177,23 +195,27 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
   }
 
   bool _matchesProgram(WeeklyProgramModel p) {
-    if (_places.isNotEmpty && !_places.contains(_placeFromEquipment(p.equipmentNeeded))) {
+    if (_places.isNotEmpty &&
+        !_places.contains(_placeFromEquipment(p.equipmentNeeded))) {
       return false;
     }
     if (_goals.isNotEmpty && !_goals.any((g) => _matchesGoal(p.objetivo, g))) {
       return false;
     }
-    if (_difficulties.isNotEmpty && !_difficulties.contains(_difficultyFromLevel(p.nivel))) {
+    if (_difficulties.isNotEmpty &&
+        !_difficulties.contains(_difficultyFromLevel(p.nivel))) {
       return false;
     }
-    if (_durations.isNotEmpty && !_durations.any((d) => d.matchesMinutes(p.durationMinutes))) {
+    if (_durations.isNotEmpty &&
+        !_durations.any((d) => d.matchesMinutes(p.durationMinutes))) {
       return false;
     }
     return true;
   }
 
   bool _isProgramApplied(WeeklyProgramModel program) {
-    final values = _currentWeekPlan?.assignments.values ?? const Iterable<String>.empty();
+    final values =
+        _currentWeekPlan?.assignments.values ?? const Iterable<String>.empty();
     final prefix = 'gen_${program.id}_';
     for (final id in values) {
       if (id.startsWith(prefix)) return true;
@@ -235,18 +257,54 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
     }
 
     final filtered = _items.where(_matchesProgram).toList();
-    final scored = filtered
-        .map((p) => (
-              program: p,
-              rec: TrainingRecommendationService.scoreWeeklyProgram(
-                profile: _profile,
+    final isPeriodActive = CycleRecommendationService.isPeriodActive(
+      _cycleData,
+    );
+    final scored =
+        filtered
+            .map(
+              (p) => (
                 program: p,
+                rec: TrainingRecommendationService.scoreWeeklyProgram(
+                  profile: _profile,
+                  program: p,
+                ),
               ),
-            ))
-        .toList()
-      ..sort((a, b) => b.rec.score.compareTo(a.rec.score));
+            )
+            .toList()
+          ..sort((a, b) {
+            final sb =
+                b.rec.score +
+                (isPeriodActive
+                    ? CycleRecommendationService.weeklyProgramPeriodScore(
+                        b.program,
+                      )
+                    : 0);
+            final sa =
+                a.rec.score +
+                (isPeriodActive
+                    ? CycleRecommendationService.weeklyProgramPeriodScore(
+                        a.program,
+                      )
+                    : 0);
+            return sb.compareTo(sa);
+          });
 
-    final recommended = scored.where((e) => e.rec.score > 0).take(3).toList();
+    final periodFriendly = isPeriodActive
+        ? scored
+              .where(
+                (e) => CycleRecommendationService.isWeeklyProgramPeriodFriendly(
+                  e.program,
+                ),
+              )
+              .take(3)
+              .toList()
+        : const [];
+    final periodIds = {for (final item in periodFriendly) item.program.id};
+    final recommended = scored
+        .where((e) => e.rec.score > 0 && !periodIds.contains(e.program.id))
+        .take(3)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Planes semanales')),
@@ -254,6 +312,52 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            if (isPeriodActive) ...[
+              ProgressSectionCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Regla activa',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Priorizamos programas semanales más suaves o marcados desde tu base de datos para esta fase.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (periodFriendly.isNotEmpty) ...[
+              Text(
+                'Programas para estos días',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 10),
+              for (final item in periodFriendly) ...[
+                _WeeklyProgramCard(
+                  program: item.program,
+                  busy: _saving,
+                  recommendation:
+                      'Bien para estos días. ${item.rec.explanation}',
+                  primaryLabel: _isProgramApplied(item.program)
+                      ? 'Editar plan'
+                      : 'Agregar a mi plan',
+                  onApply: _isProgramApplied(item.program)
+                      ? () => _openDetail(item.program)
+                      : () => _applyToCurrentWeek(item.program),
+                  onOpen: () => _openDetail(item.program),
+                  highlightedForPeriod: true,
+                ),
+                const SizedBox(height: 10),
+              ],
+              const SizedBox(height: 8),
+            ],
             if (recommended.isNotEmpty) ...[
               Text(
                 'Recomendado para ti',
@@ -272,6 +376,7 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
                       ? () => _openDetail(item.program)
                       : () => _applyToCurrentWeek(item.program),
                   onOpen: () => _openDetail(item.program),
+                  highlightedForPeriod: false,
                 ),
                 const SizedBox(height: 10),
               ],
@@ -339,7 +444,9 @@ class _WeeklyProgramsScreenState extends State<WeeklyProgramsScreen> {
             const SizedBox(height: 10),
             if (scored.isEmpty)
               const ProgressSectionCard(
-                child: Text('No hay programas que coincidan con estos filtros.'),
+                child: Text(
+                  'No hay programas que coincidan con estos filtros.',
+                ),
               )
             else
               for (final item in scored) ...[
@@ -390,9 +497,9 @@ class _FilterGroup<T> extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -408,14 +515,16 @@ class _FilterGroup<T> extends StatelessWidget {
                   selectedColor: CFColors.primary.withValues(alpha: 0.12),
                   checkmarkColor: CFColors.primary,
                   side: BorderSide(
-                    color: selected.contains(v) ? CFColors.primary : CFColors.softGray,
+                    color: selected.contains(v)
+                        ? CFColors.primary
+                        : CFColors.softGray,
                   ),
                   labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: selected.contains(v)
-                            ? CFColors.primary
-                            : CFColors.textSecondary,
-                      ),
+                    fontWeight: FontWeight.w700,
+                    color: selected.contains(v)
+                        ? CFColors.primary
+                        : CFColors.textSecondary,
+                  ),
                 ),
             ],
           ),
@@ -433,6 +542,7 @@ class _WeeklyProgramCard extends StatelessWidget {
     required this.busy,
     required this.recommendation,
     required this.primaryLabel,
+    this.highlightedForPeriod = false,
   });
 
   final WeeklyProgramModel program;
@@ -441,6 +551,32 @@ class _WeeklyProgramCard extends StatelessWidget {
   final bool busy;
   final String recommendation;
   final String primaryLabel;
+  final bool highlightedForPeriod;
+
+  String _equipmentLabel(String equipment) {
+    switch (equipment.trim().toLowerCase()) {
+      case '':
+      case 'none':
+      case 'sin material':
+      case 'sin_material':
+      case 'bodyweight':
+      case 'peso corporal':
+        return 'Sin material';
+      case 'casa':
+      case 'casa con material':
+      case 'casa_con_material':
+      case 'home':
+        return 'Casa con material';
+      case 'gym':
+        return 'Gimnasio';
+      case 'parque':
+      case 'aire libre':
+      case 'outdoor':
+        return 'Parque';
+      default:
+        return equipment.trim();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -452,6 +588,27 @@ class _WeeklyProgramCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (highlightedForPeriod) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: context.cfPrimaryTint,
+                  borderRadius: const BorderRadius.all(Radius.circular(999)),
+                  border: Border.all(color: context.cfPrimaryTintStrong),
+                ),
+                child: Text(
+                  'Recomendado con la regla',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.cfPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
             Row(
               children: [
                 Container(
@@ -471,8 +628,8 @@ class _WeeklyProgramCard extends StatelessWidget {
                   child: Text(
                     program.nombre,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 const Icon(Icons.chevron_right, color: CFColors.textSecondary),
@@ -485,15 +642,18 @@ class _WeeklyProgramCard extends StatelessWidget {
             const SizedBox(height: 6),
             _MetaLine(label: 'Duración', value: '${program.semanas} semanas'),
             const SizedBox(height: 6),
-            _MetaLine(label: 'Equipamiento', value: program.equipmentNeeded),
+            _MetaLine(
+              label: 'Equipamiento',
+              value: _equipmentLabel(program.equipmentNeeded),
+            ),
             const SizedBox(height: 10),
             Text(program.descripcion),
             const SizedBox(height: 8),
             Text(
               recommendation,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: CFColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: CFColors.textSecondary),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -530,17 +690,17 @@ class _MetaLine extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: CFColors.textSecondary,
-                  fontWeight: FontWeight.w800,
-                ),
+              color: CFColors.textSecondary,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
         Expanded(
           child: Text(
             value,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
         ),
       ],

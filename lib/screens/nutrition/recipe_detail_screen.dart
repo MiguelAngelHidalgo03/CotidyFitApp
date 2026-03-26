@@ -13,6 +13,7 @@ import '../../services/recipe_interactions_firestore_service.dart';
 import '../../services/recipe_repository.dart';
 import '../../services/recipes_repository_factory.dart';
 import '../../services/settings_service.dart';
+import '../../widgets/nutrition/recipe_media.dart';
 import '../../widgets/progress/progress_section_card.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -71,13 +72,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       final fav = r == null
           ? false
           : await _interactions
-              .isLiked(recipeId: r.id)
-              .timeout(const Duration(seconds: 10));
+                .isLiked(recipeId: r.id)
+                .timeout(const Duration(seconds: 10));
       final myRating = r == null
           ? null
           : await _interactions
-              .getMyRating(recipeId: r.id)
-              .timeout(const Duration(seconds: 10));
+                .getMyRating(recipeId: r.id)
+                .timeout(const Duration(seconds: 10));
       final profile = await _profileService.getProfile();
       final settings = await _settingsService.getSettings();
 
@@ -113,15 +114,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       setState(() => _isFavorite = nowFav);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(nowFav ? 'Añadida a Favoritas' : 'Quitada de Favoritas'),
+          content: Text(
+            nowFav ? 'Añadida a Favoritas' : 'Quitada de Favoritas',
+          ),
         ),
       );
       await _refreshAfterInteraction();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo guardar el like: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo guardar el like: $e')));
     }
   }
 
@@ -183,9 +186,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       await _interactions.setRating(recipeId: r.id, rating: value);
       if (!mounted) return;
       setState(() => _myRating = value);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Puntuación guardada.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Puntuación guardada.')));
       await _refreshAfterInteraction();
     } catch (e) {
       if (!mounted) return;
@@ -318,7 +321,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, size: 48, color: CFColors.textSecondary),
+                  Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: context.cfTextSecondary,
+                  ),
                   const SizedBox(height: 12),
                   Text(_error!, textAlign: TextAlign.center),
                   const SizedBox(height: 16),
@@ -346,14 +353,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
 
     final showNutritionValues = _settings.showNutritionValues;
-    final servingFactor = NutritionPersonalizationService
-      .suggestedRecipeServingFactor(_profile, r);
+    final servingFactor =
+        NutritionPersonalizationService.suggestedRecipeServingFactor(
+          _profile,
+          r,
+        );
     final suggestedServings = servingFactor;
     final suggestedGrams = (r.gramsPerServing * servingFactor).round();
     final suggestedKcal = (r.kcalPerServing * servingFactor).round();
     final goalLabel = (_profile?.goal.trim().isNotEmpty ?? false)
-      ? _profile!.goal
-      : 'tu perfil';
+        ? _profile!.goal
+        : 'tu perfil';
 
     return Scaffold(
       appBar: AppBar(
@@ -380,20 +390,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           children: [
             Hero(
               tag: 'recipe_${r.id}',
-              child: Container(
+              child: RecipeMedia(
+                imageUrl: r.imageUrl,
+                width: double.infinity,
                 height: 220,
-                decoration: BoxDecoration(
-                  color: CFColors.primary.withValues(alpha: 0.10),
-                  borderRadius: const BorderRadius.all(Radius.circular(22)),
-                  border: Border.all(color: CFColors.softGray),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.restaurant_menu,
-                    size: 60,
-                    color: CFColors.primary,
-                  ),
-                ),
+                borderRadius: 22,
+                iconSize: 60,
               ),
             ),
             const SizedBox(height: 14),
@@ -416,17 +418,19 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: CFColors.primary.withValues(alpha: 0.12),
+                          color: context.cfPrimaryTint,
                           borderRadius: const BorderRadius.all(
                             Radius.circular(999),
                           ),
-                          border: Border.all(color: CFColors.primary),
+                          border: Border.all(
+                            color: context.cfPrimaryTintStrong,
+                          ),
                         ),
                         child: Text(
                           r.country,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: CFColors.primary,
+                                color: context.cfPrimary,
                                 fontWeight: FontWeight.w900,
                               ),
                         ),
@@ -439,25 +443,30 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     runSpacing: 10,
                     children: [
                       _statChip(
+                        context: context,
                         icon: Icons.star,
                         label:
                             '${r.ratingAvg.toStringAsFixed(1)} (${r.ratingCount})',
                       ),
                       _statChip(
+                        context: context,
                         icon: Icons.favorite,
                         label: '${r.likes} likes',
                       ),
                       if (showNutritionValues)
                         _statChip(
+                          context: context,
                           icon: Icons.local_fire_department_outlined,
                           label: '${r.kcalPerServing} kcal/ración',
                         ),
                       if (showNutritionValues)
                         _statChip(
+                          context: context,
                           icon: Icons.local_fire_department,
                           label: '${r.kcalPer100g} kcal/100g',
                         ),
                       _statChip(
+                        context: context,
                         icon: Icons.schedule,
                         label: '${r.durationMinutes} min',
                       ),
@@ -468,25 +477,23 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: CFColors.primary.withValues(alpha: 0.08),
+                      color: context.cfPrimaryTint,
                       borderRadius: const BorderRadius.all(Radius.circular(14)),
-                      border: Border.all(color: CFColors.primary.withValues(alpha: 0.35)),
+                      border: Border.all(color: context.cfPrimaryTintStrong),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Cantidad recomendada para $goalLabel',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           '${suggestedServings.toStringAsFixed(1)} ración (~$suggestedGrams g)',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         if (showNutritionValues) ...[
                           const SizedBox(height: 2),
@@ -499,38 +506,41 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     ),
                   ),
                   if (showNutritionValues) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Macronutrientes (por ración)',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
+                    const SizedBox(height: 12),
+                    Text(
+                      'Macronutrientes (por ración)',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _macroTile(
-                          title: 'Proteína',
-                          value: '${r.macrosPerServing.proteinG} g',
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _macroTile(
+                            context: context,
+                            title: 'Proteína',
+                            value: '${r.macrosPerServing.proteinG} g',
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _macroTile(
-                          title: 'Carbs',
-                          value: '${r.macrosPerServing.carbsG} g',
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _macroTile(
+                            context: context,
+                            title: 'Carbs',
+                            value: '${r.macrosPerServing.carbsG} g',
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _macroTile(
-                          title: 'Grasa',
-                          value: '${r.macrosPerServing.fatG} g',
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _macroTile(
+                            context: context,
+                            title: 'Grasa',
+                            value: '${r.macrosPerServing.fatG} g',
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                   ],
                   if (_myRating != null) ...[
                     const SizedBox(height: 10),
@@ -592,7 +602,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   Text('Pasos', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 8),
                   for (var i = 0; i < r.steps.length; i++) ...[
-                    _stepTile(index: i + 1, text: r.steps[i].text),
+                    _stepTile(
+                      context: context,
+                      index: i + 1,
+                      text: r.steps[i].text,
+                    ),
                     if (i != r.steps.length - 1) const SizedBox(height: 10),
                   ],
                   const SizedBox(height: 6),
@@ -609,23 +623,27 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     );
   }
 
-  static Widget _statChip({required IconData icon, required String label}) {
+  static Widget _statChip({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(999)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: CFColors.primary),
+          Icon(icon, size: 16, color: context.cfPrimary),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: CFColors.textSecondary,
+            style: TextStyle(
+              color: context.cfTextSecondary,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -634,29 +652,33 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     );
   }
 
-  static Widget _macroTile({required String title, required String value}) {
+  static Widget _macroTile({
+    required BuildContext context,
+    required String title,
+    required String value,
+  }) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(16)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: CFColors.textSecondary,
+            style: TextStyle(
+              color: context.cfTextSecondary,
               fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              color: CFColors.textPrimary,
+            style: TextStyle(
+              color: context.cfTextPrimary,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -665,7 +687,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     );
   }
 
-  static Widget _stepTile({required int index, required String text}) {
+  static Widget _stepTile({
+    required BuildContext context,
+    required int index,
+    required String text,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -673,15 +699,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: CFColors.primary.withValues(alpha: 0.12),
+            color: context.cfPrimaryTint,
             borderRadius: const BorderRadius.all(Radius.circular(10)),
-            border: Border.all(color: CFColors.primary),
+            border: Border.all(color: context.cfPrimaryTintStrong),
           ),
           child: Center(
             child: Text(
               '$index',
-              style: const TextStyle(
-                color: CFColors.primary,
+              style: TextStyle(
+                color: context.cfPrimary,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -691,8 +717,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
-              color: CFColors.textPrimary,
+            style: TextStyle(
+              color: context.cfTextPrimary,
               height: 1.3,
               fontWeight: FontWeight.w600,
             ),

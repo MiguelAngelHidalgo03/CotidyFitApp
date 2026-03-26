@@ -34,7 +34,8 @@ class IngredientCheckBottomSheet extends StatefulWidget {
       _IngredientCheckBottomSheetState();
 }
 
-class _IngredientCheckBottomSheetState extends State<IngredientCheckBottomSheet> {
+class _IngredientCheckBottomSheetState
+    extends State<IngredientCheckBottomSheet> {
   late Set<String> _have;
 
   @override
@@ -51,8 +52,8 @@ class _IngredientCheckBottomSheetState extends State<IngredientCheckBottomSheet>
       maxChildSize: 0.95,
       builder: (context, scrollCtrl) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration: BoxDecoration(
+            color: context.cfSurface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: SafeArea(
@@ -65,8 +66,8 @@ class _IngredientCheckBottomSheetState extends State<IngredientCheckBottomSheet>
                   child: Container(
                     width: 54,
                     height: 5,
-                    decoration: const BoxDecoration(
-                      color: CFColors.softGray,
+                    decoration: BoxDecoration(
+                      color: context.cfBorder,
                       borderRadius: BorderRadius.all(Radius.circular(999)),
                     ),
                   ),
@@ -74,10 +75,9 @@ class _IngredientCheckBottomSheetState extends State<IngredientCheckBottomSheet>
                 const SizedBox(height: 12),
                 Text(
                   widget.title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 if (widget.items.isEmpty)
@@ -105,9 +105,7 @@ class _IngredientCheckBottomSheetState extends State<IngredientCheckBottomSheet>
                         Expanded(
                           child: Text(
                             item.label,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyLarge
+                            style: Theme.of(context).textTheme.bodyLarge
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                         ),

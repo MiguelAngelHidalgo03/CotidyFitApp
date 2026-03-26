@@ -1122,9 +1122,77 @@ class _ChatScreenState extends State<ChatScreen> {
                                   }
 
                                   if (value == 'report') {
-                                    snack(
-                                      'Esta función estará disponible próximamente.',
+                                    final ctrl = TextEditingController();
+                                    final reason =
+                                        await showDialog<String>(
+                                      context: context,
+                                      builder: (context) {
+                                        return AlertDialog(
+                                          title: const Text('Reportar'),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: [
+                                              Text(
+                                                'Describe el motivo del reporte.',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium,
+                                              ),
+                                              const SizedBox(height: 10),
+                                              TextField(
+                                                controller: ctrl,
+                                                maxLines: 3,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  hintText:
+                                                      'Ej: spam, insultos…',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.of(context)
+                                                      .pop(),
+                                              child: const Text('Cancelar'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.of(context)
+                                                      .pop(ctrl.text),
+                                              child: const Text('Enviar'),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     );
+
+                                    if (reason == null) return;
+                                    final cleaned = reason.trim().isEmpty
+                                        ? 'Sin especificar'
+                                        : reason.trim();
+
+                                    try {
+                                      await FirebaseFirestore.instance
+                                          .collection('reports')
+                                          .add({
+                                        'reportedBy': myUid,
+                                        'reportedUserId': peerUid,
+                                        'reason': cleaned,
+                                        'chatId': chatId,
+                                        'kind': 'dm',
+                                        'createdAt':
+                                            FieldValue.serverTimestamp(),
+                                      });
+                                      snack('Reporte enviado. Gracias.');
+                                    } catch (_) {
+                                      snack(
+                                        'No se pudo enviar el reporte.',
+                                      );
+                                    }
                                   }
                                 },
                                 itemBuilder: (context) => [

@@ -198,7 +198,7 @@ class RecipeStep {
   static RecipeStep? fromJson(Map<String, dynamic> json) {
     final text = json['text'];
     if (text is! String || text.trim().isEmpty) return null;
-    final url = json['videoUrl'];
+    final url = json['videoUrl'] ?? json['video_url'];
     return RecipeStep(text: text, videoUrl: url is String ? url : null);
   }
 }
@@ -225,6 +225,11 @@ class RecipeModel {
     required this.utensils,
     required this.ingredients,
     required this.steps,
+    this.imageUrl,
+    this.videoUrl,
+    this.periodFriendly = false,
+    this.periodSupportTags = const [],
+    this.periodBenefits = const [],
   });
 
   final String id;
@@ -253,6 +258,11 @@ class RecipeModel {
   final List<String> utensils;
   final List<RecipeIngredient> ingredients;
   final List<RecipeStep> steps;
+  final String? imageUrl;
+  final String? videoUrl;
+  final bool periodFriendly;
+  final List<String> periodSupportTags;
+  final List<String> periodBenefits;
 
   int get kcalPer100g {
     if (gramsPerServing <= 0) return kcalPerServing;
@@ -282,6 +292,11 @@ class RecipeModel {
         'utensils': utensils,
         'ingredients': [for (final i in ingredients) i.toJson()],
         'steps': [for (final s in steps) s.toJson()],
+        'imageUrl': imageUrl,
+        'videoUrl': videoUrl,
+        'periodFriendly': periodFriendly,
+        'periodSupportTags': periodSupportTags,
+        'periodBenefits': periodBenefits,
       };
 
   static RecipeModel? fromJson(Map<String, dynamic> json) {
@@ -299,6 +314,57 @@ class RecipeModel {
       return null;
     }
 
+    bool readBool(List<String> keys, {bool fallback = false}) {
+      final v = readAny(keys);
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      if (v is String) {
+        switch (v.trim().toLowerCase()) {
+          case 'true':
+          case '1':
+          case 'si':
+          case 'yes':
+            return true;
+          case 'false':
+          case '0':
+          case 'no':
+            return false;
+        }
+      }
+      return fallback;
+    }
+
+    String? readText(List<String> keys) {
+      final value = readAny(keys);
+      if (value is String) {
+        final clean = value.trim();
+        return clean.isEmpty ? null : clean;
+      }
+      if (value == null) return null;
+      final clean = value.toString().trim();
+      return clean.isEmpty ? null : clean;
+    }
+
+    List<String> readStringList(List<String> keys) {
+      final raw = readAny(keys);
+      if (raw is List) {
+        return raw
+            .map((e) => (e is String ? e : e?.toString())?.trim() ?? '')
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      if (raw is String) {
+        final value = raw.trim();
+        if (value.isEmpty) return const [];
+        return value
+            .split('|')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      return const [];
+    }
+
     final id = json['id'];
     final name = json['name'];
     final country = json['country'];
@@ -311,6 +377,8 @@ class RecipeModel {
     final servings = readNum(['servings']);
     final durationMinutes = readNum(['durationMinutes', 'duration_minutes']);
     final macros = readAny(['macrosPerServing', 'macros_per_serving']);
+    final imageUrl = readText(['imageUrl', 'image_url', 'photoUrl', 'photo_url']);
+    final videoUrl = readText(['videoUrl', 'video_url']);
 
     if (id is! String || id.trim().isEmpty) return null;
     if (name is! String || name.trim().isEmpty) return null;
@@ -395,6 +463,29 @@ class RecipeModel {
       }
     }
 
+    final periodFriendly = readBool([
+      'periodFriendly',
+      'period_friendly',
+      'isPeriodFriendly',
+      'is_period_friendly',
+      'recommendedForPeriod',
+      'recommended_for_period',
+    ]);
+    final periodSupportTags = readStringList([
+      'periodSupportTags',
+      'period_support_tags',
+      'periodTags',
+      'period_tags',
+      'womenCycleTags',
+      'women_cycle_tags',
+    ]);
+    final periodBenefits = readStringList([
+      'periodBenefits',
+      'period_benefits',
+      'periodSupportBenefits',
+      'period_support_benefits',
+    ]);
+
     if (difficulty == null) return null;
 
     return RecipeModel(
@@ -418,6 +509,11 @@ class RecipeModel {
       utensils: utensils,
       ingredients: ingredients,
       steps: steps,
+      imageUrl: imageUrl,
+      videoUrl: videoUrl,
+      periodFriendly: periodFriendly,
+      periodSupportTags: periodSupportTags,
+      periodBenefits: periodBenefits,
     );
   }
 

@@ -5,6 +5,8 @@ import '../models/workout.dart';
 import '../models/workout_plan.dart';
 import '../services/workout_plan_service.dart';
 import '../utils/date_utils.dart';
+import '../widgets/training/exercise_guidance_bottom_sheet.dart';
+import 'main_navigation.dart';
 import 'workout_session_screen.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
@@ -19,7 +21,15 @@ class WorkoutDetailScreen extends StatelessWidget {
   }
 
   String _weekdayLabel(int i) {
-    const labels = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    const labels = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo',
+    ];
     return labels[i.clamp(0, 6)];
   }
 
@@ -38,9 +48,9 @@ class WorkoutDetailScreen extends StatelessWidget {
               builder: (context, setLocal) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: CFColors.surface,
+                    color: context.cfSurface,
                     borderRadius: const BorderRadius.all(Radius.circular(18)),
-                    border: Border.all(color: CFColors.softGray),
+                    border: Border.all(color: context.cfBorder),
                   ),
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -61,7 +71,7 @@ class WorkoutDetailScreen extends StatelessWidget {
                               selected: selected == i,
                               onSelected: (_) => setLocal(() => selected = i),
                               label: Text(_weekdayLabel(i)),
-                              selectedColor: CFColors.primary.withValues(alpha: 0.12),
+                              selectedColor: context.cfPrimaryTint,
                             ),
                         ],
                       ),
@@ -100,7 +110,9 @@ class WorkoutDetailScreen extends StatelessWidget {
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Entrenamiento agregado para ${_weekdayLabel(picked)}.')),
+      SnackBar(
+        content: Text('Entrenamiento agregado para ${_weekdayLabel(picked)}.'),
+      ),
     );
   }
 
@@ -121,49 +133,73 @@ class WorkoutDetailScreen extends StatelessWidget {
               Expanded(
                 child: ListView.separated(
                   itemCount: workout.exercises.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 10),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final ex = workout.exercises[index];
                     return Container(
                       decoration: BoxDecoration(
-                        color: CFColors.surface,
-                        borderRadius: const BorderRadius.all(Radius.circular(18)),
-                        border: Border.all(color: CFColors.softGray),
+                        color: context.cfSurface,
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(18),
+                        ),
+                        border: Border.all(color: context.cfBorder),
                       ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 12,
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  ex.name,
-                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        fontWeight: FontWeight.w700,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      ex.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    if (ex.description.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        ex.description.trim(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: context.cfTextSecondary,
+                                              height: 1.35,
+                                            ),
                                       ),
+                                    ],
+                                  ],
                                 ),
-                                if (ex.description.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    ex.description.trim(),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: CFColors.textSecondary,
-                                        ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                ex.repsOrTime,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Text(
-                            ex.repsOrTime,
-                            style: Theme.of(context).textTheme.bodyMedium,
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () => showExerciseGuidanceBottomSheet(
+                              context,
+                              exercise: ex,
+                            ),
+                            icon: const Icon(Icons.menu_book_outlined),
+                            label: const Text('Cómo hacerlo'),
                           ),
                         ],
                       ),
@@ -177,10 +213,20 @@ class WorkoutDetailScreen extends StatelessWidget {
                   Expanded(
                     child: FilledButton(
                       onPressed: () async {
-                        await Navigator.of(context).push<bool>(
+                        final completed = await Navigator.of(context)
+                            .push<bool>(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    WorkoutSessionScreen(workout: workout),
+                              ),
+                            );
+                        if (!context.mounted || completed != true) return;
+                        Navigator.of(context).pushAndRemoveUntil(
                           MaterialPageRoute(
-                            builder: (_) => WorkoutSessionScreen(workout: workout),
+                            builder: (_) =>
+                                const MainNavigation(initialIndex: 3),
                           ),
+                          (route) => false,
                         );
                       },
                       child: const Text('Comenzar entrenamiento'),
@@ -212,16 +258,14 @@ class _InfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: CFColors.surface,
+        color: context.cfSurface,
         borderRadius: const BorderRadius.all(Radius.circular(18)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Expanded(
-            child: _Chip(label: workout.category),
-          ),
+          Expanded(child: _Chip(label: workout.category)),
           const SizedBox(width: 10),
           _Chip(label: '${workout.durationMinutes} min'),
           const SizedBox(width: 10),
@@ -242,16 +286,16 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfSoftSurface,
         borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: CFColors.softGray),
+        border: Border.all(color: context.cfBorder),
       ),
       child: Text(
         label,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: CFColors.textPrimary,
-            ),
+          fontWeight: FontWeight.w600,
+          color: context.cfTextPrimary,
+        ),
       ),
     );
   }
