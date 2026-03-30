@@ -223,7 +223,7 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                   const _SectionHeader(title: 'Más populares'),
                   const SizedBox(height: 10),
                   SizedBox(
-                    height: 96,
+                    height: 112,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: popular.length,
@@ -266,7 +266,7 @@ class _ExploreRecipesTabState extends State<ExploreRecipesTab> {
                   const _SectionHeader(title: 'Recomendadas'),
                   const SizedBox(height: 10),
                   SizedBox(
-                    height: 96,
+                    height: 112,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: recommended.length,

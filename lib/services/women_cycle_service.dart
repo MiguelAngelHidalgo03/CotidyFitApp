@@ -63,6 +63,7 @@ class WomenCycleService {
       _authOverride = auth;
 
   static const _kLocalKey = 'cf_women_cycle_current_v1';
+  static const _kLocalHistoryKey = 'cf_women_cycle_history_v1';
 
   final FirebaseFirestore? _dbOverride;
   final FirebaseAuth? _authOverride;
@@ -125,6 +126,43 @@ class WomenCycleService {
     return WomenCycleData.fromMap(map);
   }
 
+  Future<List<WomenCycleData>> getCycleHistory({int limit = 24}) async {
+    final merged = <String, WomenCycleData>{
+      for (final item in await _readLocalHistory()) DateUtilsCF.toKey(item.start): item,
+    };
+
+    final uid = _uid;
+    if (uid != null) {
+      try {
+        final logs = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('cycleLogs')
+            .orderBy('startKey', descending: true)
+            .limit(limit)
+            .get();
+        for (final doc in logs.docs) {
+          final parsed = WomenCycleData.fromMap(doc.data());
+          if (parsed != null) {
+            merged[DateUtilsCF.toKey(parsed.start)] = parsed;
+          }
+        }
+      } catch (_) {
+        // fallback local
+      }
+    }
+
+    final current = await getCurrentCycle();
+    if (current != null) {
+      merged[DateUtilsCF.toKey(current.start)] = current;
+    }
+
+    final items = merged.values.toList()
+      ..sort((a, b) => b.start.compareTo(a.start));
+    if (items.length <= limit) return items;
+    return items.take(limit).toList();
+  }
+
   Future<WomenCycleData> startPeriod({DateTime? startDate}) async {
     final s = DateUtilsCF.dateOnly(startDate ?? DateTime.now());
     final data = WomenCycleData(start: s, end: null);
@@ -146,6 +184,7 @@ class WomenCycleService {
 
   Future<void> saveCurrentCycle(WomenCycleData data) async {
     await _saveLocal(data);
+    await _upsertLocalHistory(data);
 
     final uid = _uid;
     if (uid != null) {
@@ -167,21 +206,22 @@ class WomenCycleService {
             .doc('current')
             .set(payload, SetOptions(merge: true));
 
-        final end = data.end;
-        if (end != null) {
-          final cycleId =
-              '${DateUtilsCF.toKey(data.start)}_${DateUtilsCF.toKey(end)}';
-          await _db
-              .collection('users')
-              .doc(uid)
-              .collection('cycleLogs')
-              .doc(cycleId)
-              .set({
-                ...data.toJson(),
-                'cycleId': cycleId,
-                'updatedAt': FieldValue.serverTimestamp(),
-              }, SetOptions(merge: true));
+        final cycleId = DateUtilsCF.toKey(data.start);
+        final logPayload = <String, Object?>{
+          ...data.toJson(),
+          'cycleId': cycleId,
+          'isActive': data.end == null,
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        if (data.end == null) {
+          logPayload['endKey'] = FieldValue.delete();
         }
+        await _db
+            .collection('users')
+            .doc(uid)
+            .collection('cycleLogs')
+            .doc(cycleId)
+            .set(logPayload, SetOptions(merge: true));
       } catch (_) {
         // local already saved
       }
@@ -191,6 +231,49 @@ class WomenCycleService {
   Future<void> _saveLocal(WomenCycleData data) async {
     final p = await _prefs();
     await p.setString(_kLocalKey, jsonEncode(data.toJson()));
+  }
+
+  Future<void> _upsertLocalHistory(WomenCycleData data) async {
+    final items = await _readLocalHistory();
+    final startKey = DateUtilsCF.toKey(data.start);
+    final next = [
+      data,
+      for (final item in items)
+        if (DateUtilsCF.toKey(item.start) != startKey) item,
+    ]..sort((a, b) => b.start.compareTo(a.start));
+
+    final p = await _prefs();
+    await p.setString(
+      _kLocalHistoryKey,
+      jsonEncode(next.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  Future<List<WomenCycleData>> _readLocalHistory() async {
+    final p = await _prefs();
+    final raw = p.getString(_kLocalHistoryKey);
+    if (raw == null || raw.trim().isEmpty) return const [];
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final items = <WomenCycleData>[];
+      for (final value in decoded) {
+        if (value is! Map) continue;
+        final map = <String, dynamic>{};
+        for (final entry in value.entries) {
+          if (entry.key is String) {
+            map[entry.key as String] = entry.value;
+          }
+        }
+        final parsed = WomenCycleData.fromMap(map);
+        if (parsed != null) items.add(parsed);
+      }
+      items.sort((a, b) => b.start.compareTo(a.start));
+      return items;
+    } catch (_) {
+      return const [];
+    }
   }
 
   List<WomenCycleFoodTip> buildFoodTips({

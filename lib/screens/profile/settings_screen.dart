@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/user_settings.dart';
 import '../../services/settings_service.dart';
+import '../../services/task_reminder_service.dart';
 import 'blocked_contacts_screen.dart';
 import '../../widgets/profile/profile_action_tile.dart';
 import '../../widgets/progress/progress_section_card.dart';
@@ -52,6 +53,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (picked == null) return;
     await _save(
       settings.copyWith(notificationMinutes: picked.hour * 60 + picked.minute),
+    );
+    final scheduled =
+        await TaskReminderService.instance.syncStoredDailyCheckInReminder();
+    if (!mounted) return;
+    _toast(
+      scheduled
+          ? 'Recordatorio diario actualizado.'
+          : 'Hora guardada. Revisa que las notificaciones del móvil estén permitidas.',
     );
   }
 

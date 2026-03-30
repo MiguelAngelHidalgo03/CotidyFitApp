@@ -10,6 +10,7 @@ import '../services/onboarding_service.dart';
 import '../services/profile_service.dart';
 import '../services/push_token_service.dart';
 import '../services/settings_service.dart';
+import '../services/task_reminder_service.dart';
 import '../widgets/progress/progress_section_card.dart';
 import '../widgets/profile/streak_preferences_editor.dart';
 import 'main_navigation.dart';
@@ -489,6 +490,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final settings = await _settingsService.getSettings();
     await _settingsService.saveSettings(
       settings.copyWith(notificationMinutes: _timeToMinutes(notification)),
+    );
+    await TaskReminderService.instance.syncDailyCheckInReminder(
+      minutesFromMidnight: _timeToMinutes(notification),
+      goal: goal,
     );
 
     try {

@@ -698,6 +698,11 @@ class HomeDashboardService {
     return snap.data();
   }
 
+  Future<Map<String, dynamic>?> getGlobalHomeContent() async {
+    final snap = await _db.collection('app_config').doc('home_content').get();
+    return snap.data();
+  }
+
   Future<void> saveUserGoals({
     required String uid,
     required Map<String, dynamic> dailyGoal,

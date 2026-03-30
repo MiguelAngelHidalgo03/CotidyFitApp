@@ -115,6 +115,9 @@ class _CommunityNewsTabState extends State<CommunityNewsTab>
     if (title.isEmpty) return null;
 
     final description = (data['description'] as String?)?.trim() ?? '';
+    final introMessage = (data['introMessage'] as String?)?.trim() ?? '';
+    final emoji = (data['emoji'] as String?)?.trim() ?? '';
+    final category = (data['category'] as String?)?.trim() ?? '';
     final order = (data['order'] as num?)?.toInt() ?? 9999;
 
     final lastRaw = data['lastMessage'];
@@ -140,7 +143,10 @@ class _CommunityNewsTabState extends State<CommunityNewsTab>
         clearedAtMs != null && clearedAtMs > 0 && updatedAtMs <= clearedAtMs;
     final preview = previewHidden
         ? 'Sin novedades recientes.'
-        : _previewFromMessage(lastMessage, fallback: description);
+        : _previewFromMessage(
+            lastMessage,
+            fallback: introMessage.isNotEmpty ? introMessage : description,
+          );
 
     final subscribed = prefData['subscribed'] == true;
     final pinned = subscribed && prefData['pinned'] == true;
@@ -149,6 +155,9 @@ class _CommunityNewsTabState extends State<CommunityNewsTab>
       id: docSnap.id,
       title: title,
       description: description,
+      introMessage: introMessage,
+      emoji: emoji,
+      category: category,
       preview: preview,
       order: order,
       updatedAtMs: updatedAtMs,
@@ -499,6 +508,9 @@ class _NewsItem {
     required this.id,
     required this.title,
     required this.description,
+    required this.introMessage,
+    required this.emoji,
+    required this.category,
     required this.preview,
     required this.order,
     required this.updatedAtMs,
@@ -509,6 +521,9 @@ class _NewsItem {
   final String id;
   final String title;
   final String description;
+  final String introMessage;
+  final String emoji;
+  final String category;
   final String preview;
   final int order;
   final int updatedAtMs;
@@ -543,9 +558,9 @@ class _NewsMetric extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.cfTextSecondary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: context.cfTextSecondary),
           ),
         ],
       ),
@@ -598,7 +613,9 @@ class _NewsCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            item.title,
+                            item.emoji.isEmpty
+                                ? item.title
+                                : '${item.emoji} ${item.title}',
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(fontWeight: FontWeight.w900),
                           ),
@@ -607,7 +624,7 @@ class _NewsCard extends StatelessWidget {
                         Text(
                           _timeLabel(item.updatedAtMs),
                           style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: context.cfTextSecondary),
+                              ?.copyWith(color: context.cfTextSecondary),
                         ),
                       ],
                     ),
@@ -616,6 +633,13 @@ class _NewsCard extends StatelessWidget {
                       Text(
                         item.description,
                         style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                    if (item.category.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _NewsPill(
+                        label: item.category,
+                        icon: Icons.forum_outlined,
                       ),
                     ],
                   ],

@@ -6,10 +6,8 @@ service firebase.storage {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'cotidyfit@gmail.com' ||
-        firestore.exists(/databases/(default)/documents/admin_users/$(request.auth.uid))
-      );
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/admin_users/$(request.auth.uid));
     }
 
     match /nutrition/recipes/{recipeId}/{allPaths=**} {

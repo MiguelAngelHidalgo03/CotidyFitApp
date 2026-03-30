@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../services/home_remote_content_service.dart';
 
 class HomeTailSection extends StatelessWidget {
   const HomeTailSection({super.key});
@@ -45,16 +46,16 @@ class _PremiumCard extends StatelessWidget {
           Expanded(
             child: Text(
               'Premium',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
             ),
           ),
           Text(
             'Próximamente',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: CFColors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: CFColors.textSecondary),
           ),
         ],
       ),
@@ -65,24 +66,35 @@ class _PremiumCard extends StatelessWidget {
 class _MotivationalQuote extends StatelessWidget {
   const _MotivationalQuote();
 
+  static const List<String> _fallbackQuotes = <String>[
+    'Cada pequeña decisión suma.',
+    'Hazlo simple. Hazlo hoy.',
+    'Constancia > perfección.',
+    'Un paso más también cuenta.',
+    'Tu energía se entrena cada día.',
+  ];
+
+  static const HomeRemoteContentService _contentService =
+      HomeRemoteContentService();
+
   @override
   Widget build(BuildContext context) {
-    final quotes = <String>[
-      'Cada pequeña decisión suma.',
-      'Hazlo simple. Hazlo hoy.',
-      'Constancia > perfección.',
-      'Un paso más también cuenta.',
-      'Tu energía se entrena cada día.',
-    ];
-    final now = DateTime.now();
-    final idx = (now.year + now.month + now.day) % quotes.length;
-
-    return Text(
-      '“${quotes[idx]}”',
-      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+    return StreamBuilder<List<String>>(
+      stream: _contentService.watchStartQuotes(fallback: _fallbackQuotes),
+      initialData: _fallbackQuotes,
+      builder: (context, snapshot) {
+        final quote = _contentService.quoteForToday(
+          snapshot.data ?? _fallbackQuotes,
+          DateTime.now(),
+        );
+        return Text(
+          quote.isEmpty ? '' : '“$quote”',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: CFColors.textSecondary,
             fontStyle: FontStyle.italic,
           ),
+        );
+      },
     );
   }
 }

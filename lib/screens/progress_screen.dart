@@ -1478,14 +1478,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 '${s.currentXp} / ${s.nextLevelXp} XP',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              if (s.rarest.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Logros raros: ${s.rarest.join(' · ')}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-              const SizedBox(height: 4),
+              const SizedBox(height: 10),
               Text(
                 'Ver detalle',
                 style: Theme.of(
@@ -1508,18 +1501,31 @@ class _SmallKpi extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            height: 18,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+        ],
+      ),
     );
   }
 }

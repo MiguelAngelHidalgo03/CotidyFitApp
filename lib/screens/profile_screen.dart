@@ -17,6 +17,7 @@ import '../services/auth_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/profile_service.dart';
 import '../services/settings_service.dart';
+import '../services/task_reminder_service.dart';
 import '../services/user_repository.dart';
 import '../services/weight_service.dart';
 import '../widgets/profile/profile_header_card.dart';
@@ -1036,6 +1037,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final mins = picked.hour * 60 + picked.minute;
     await _saveProfile(profile.copyWith(notificationMinutes: mins));
     await _saveSettings(settings.copyWith(notificationMinutes: mins));
+    final scheduled = await TaskReminderService.instance.syncDailyCheckInReminder(
+      minutesFromMidnight: mins,
+      goal: profile.goal,
+    );
+    if (!mounted) return;
+    _toast(
+      scheduled
+          ? 'Recordatorio diario actualizado.'
+          : 'Hora guardada. Revisa permisos de notificaciones en tu móvil.',
+    );
   }
 
   Future<void> _editStreakPreferences() async {

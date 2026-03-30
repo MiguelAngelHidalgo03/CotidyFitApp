@@ -159,7 +159,6 @@ class _HomeScreenState extends State<HomeScreen>
   UserData _userData = initialUserData;
   UserProfile? _profileModel;
   bool _loading = true;
-  bool _loadingPrimaryMetrics = true;
   bool _loadingCollections = true;
   bool _suggestionVisible = false;
   List<HomeDayStat> _weekDays = const [];
@@ -186,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen>
   AppPermissionStatus _stepsPermissionStatusCache =
       AppPermissionStatus.notRequested;
   Future<void>? _dialogMetricsPrefetchFuture;
+  Map<String, dynamic>? _homeContentConfig;
 
   @override
   bool get wantKeepAlive => true;
@@ -278,6 +278,39 @@ class _HomeScreenState extends State<HomeScreen>
       {'description': 'Cumplir hábitos clave en 5 días', 'target': 5},
     ],
   };
+
+  Map<String, List<Map<String, dynamic>>> _goalTemplates({
+    required bool weekly,
+  }) {
+    final fallback = weekly ? _weeklyGoalTemplates : _dailyGoalTemplates;
+    final configKey = weekly ? 'weeklyGoalTemplates' : 'dailyGoalTemplates';
+    final raw = _homeContentConfig?[configKey];
+    if (raw is! Map) return fallback;
+
+    final parsed = <String, List<Map<String, dynamic>>>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString().trim();
+      if (key.isEmpty || entry.value is! List) continue;
+
+      final options = <Map<String, dynamic>>[];
+      for (final item in entry.value as List) {
+        if (item is! Map) continue;
+        final description = (item['description'] as String? ?? '').trim();
+        final targetRaw = item['target'];
+        final target = targetRaw is int
+            ? targetRaw
+            : targetRaw is num
+            ? targetRaw.round()
+            : int.tryParse(targetRaw?.toString() ?? '');
+        if (description.isEmpty || target == null || target <= 0) continue;
+        options.add({'description': description, 'target': target});
+      }
+
+      if (options.isNotEmpty) parsed[key] = options;
+    }
+
+    return parsed.isEmpty ? fallback : parsed;
+  }
 
   @override
   void initState() {
@@ -545,7 +578,6 @@ class _HomeScreenState extends State<HomeScreen>
         _suggestionVisible = true;
         _profileModel = profile;
         _loading = false;
-        _loadingPrimaryMetrics = false;
         _loadingCollections = true;
         _statusMessage = null;
       });
@@ -735,7 +767,6 @@ class _HomeScreenState extends State<HomeScreen>
         if (withLoader && !_hasVisibleContent) {
           _loading = true;
         }
-        _loadingPrimaryMetrics = true;
         _loadingCollections = true;
         _statusMessage = null;
       });
@@ -771,11 +802,11 @@ class _HomeScreenState extends State<HomeScreen>
         _profileModel = profile;
         _suggestionVisible = true;
         _loading = false;
-        _loadingPrimaryMetrics = false;
       });
 
       HomeDashboardData? dashboardData;
       Map<String, dynamic>? homeConfig;
+      Map<String, dynamic>? homeContentConfig;
       Map<String, dynamic>? homeHeader;
       Map<String, dynamic>? dailyMood;
       String? preferredName;
@@ -797,12 +828,16 @@ class _HomeScreenState extends State<HomeScreen>
             uid: uid,
             fallbackEmail: firebaseUser?.email,
           ),
+          _dashboard.getGlobalHomeContent(),
         ]);
         dashboardData = results[0] as HomeDashboardData?;
         homeConfig = results[1] as Map<String, dynamic>?;
         homeHeader = results[2] as Map<String, dynamic>?;
         dailyMood = results[3] as Map<String, dynamic>?;
         preferredName = results[4] as String?;
+        homeContentConfig = results[5] as Map<String, dynamic>?;
+      } else {
+        homeContentConfig = await _dashboard.getGlobalHomeContent();
       }
 
       final resolvedName = (preferredName ?? '').trim().isNotEmpty
@@ -928,6 +963,7 @@ class _HomeScreenState extends State<HomeScreen>
       final suggestions = _suggestionsForNow();
       setState(() {
         _userData = next;
+        _homeContentConfig = homeContentConfig;
         _profileModel = profile;
         _weekDays = dashboardData?.weekDays ?? const [];
         _weeklyHabitsCompleted = dashboardData?.weeklyHabitsCompleted ?? 0;
@@ -987,7 +1023,6 @@ class _HomeScreenState extends State<HomeScreen>
         _cityLabel = 'Ubicación no disponible';
         _tempLabel = '--°C';
         _suggestionVisible = true;
-        _loadingPrimaryMetrics = false;
         _loadingCollections = false;
         _statusMessage = _hasVisibleContent
             ? 'No se detecta una fuente de internet. Mostrando los últimos datos guardados.'
@@ -2745,9 +2780,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _openGoalEditor({required bool weekly}) async {
     final current = weekly ? _userData.weeklyGoal : _userData.dailyGoal;
+    final templatesSource = _goalTemplates(weekly: weekly);
+    final goalTypes = templatesSource.keys.toList();
     String selectedType = (current['type'] as String? ?? 'Entrenamiento')
         .trim();
-    final templatesSource = weekly ? _weeklyGoalTemplates : _dailyGoalTemplates;
+    if (!templatesSource.containsKey(selectedType) && goalTypes.isNotEmpty) {
+      selectedType = goalTypes.first;
+    }
     final initialOptions =
         templatesSource[selectedType] ?? const <Map<String, dynamic>>[];
     var selectedTemplate = initialOptions.isNotEmpty
@@ -2771,29 +2810,21 @@ class _HomeScreenState extends State<HomeScreen>
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: selectedType,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Entrenamiento',
-                      child: Text('Entrenamiento'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Nutrición',
-                      child: Text('Nutrición'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Hidratación',
-                      child: Text('Hidratación'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Meditación',
-                      child: Text('Meditación'),
-                    ),
-                    DropdownMenuItem(value: 'Pasos', child: Text('Pasos')),
-                    DropdownMenuItem(value: 'Hábitos', child: Text('Hábitos')),
-                  ],
+                  items: goalTypes
+                      .map(
+                        (type) => DropdownMenuItem<String>(
+                          value: type,
+                          child: Text(type),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (v) {
                     setLocal(() {
-                      selectedType = v ?? 'Entrenamiento';
+                      selectedType =
+                          v ??
+                          (goalTypes.isNotEmpty
+                              ? goalTypes.first
+                              : 'Entrenamiento');
                       final options =
                           templatesSource[selectedType] ??
                           const <Map<String, dynamic>>[];

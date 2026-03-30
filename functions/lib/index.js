@@ -33,20 +33,35 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onWeeklyChallengeProgressWrite = exports.seedWeeklyChallengesHttp = exports.seedWeeklyChallenges = exports.onUserTaskReminderChanged = exports.seedAchievementsCatalog = exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onReportCreated = exports.onCommunityGroupMessageCreated = exports.onMessageCreated = exports.deleteMyAccount = exports.deleteSuggestionAdmin = exports.submitSuggestion = exports.deleteChatCascade = void 0;
+exports.onWeeklyChallengeProgressWrite = exports.seedCommunityGroupsHttp = exports.seedWeeklyChallengesHttp = exports.seedWeeklyChallenges = exports.onUserTaskReminderChanged = exports.seedAchievementsCatalog = exports.seedTrainingSampleData = exports.onRecipeRatingWrite = exports.onRecipeLikeWrite = exports.onTemplateRatingWrite = exports.onTemplateLikeWrite = exports.onReportCreated = exports.onCommunityGroupMessageCreated = exports.onMessageCreated = exports.deleteMyAccount = exports.deleteSuggestionAdmin = exports.submitSuggestion = exports.deleteChatCascade = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
-const ADMIN_EMAIL_ALLOWLIST = new Set(['cotidyfit@gmail.com']);
 async function isAdminUser(uid, email) {
-    const normalizedEmail = (email ?? '').trim().toLowerCase();
-    if (ADMIN_EMAIL_ALLOWLIST.has(normalizedEmail)) {
-        return true;
-    }
     const adminSnap = await admin.firestore().collection('admin_users').doc(uid).get();
     return adminSnap.exists;
+}
+function areHttpSeedEndpointsEnabled() {
+    return (process.env.ENABLE_HTTP_SEED_ENDPOINTS ?? '').trim().toLowerCase() === 'true';
+}
+function authorizeHttpSeedRequest(req, res) {
+    if (!areHttpSeedEndpointsEnabled()) {
+        res.status(403).json({ ok: false, error: 'HTTP seed endpoints are disabled' });
+        return false;
+    }
+    const expected = (process.env.SEED_KEY ?? '').trim();
+    if (!expected) {
+        res.status(500).json({ ok: false, error: 'SEED_KEY is not configured' });
+        return false;
+    }
+    const provided = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
+    if (provided !== expected) {
+        res.status(401).json({ ok: false, error: 'Unauthorized' });
+        return false;
+    }
+    return true;
 }
 function chunk(items, size) {
     if (size <= 0)
@@ -798,10 +813,7 @@ exports.seedTrainingSampleData = functions.https.onRequest(async (req, res) => {
         res.status(405).json({ ok: false, error: 'Use POST' });
         return;
     }
-    const key = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
-    const expected = (process.env.SEED_KEY ?? 'cotidyfit-seed-2026').trim();
-    if (key !== expected) {
-        res.status(401).json({ ok: false, error: 'Unauthorized' });
+    if (!authorizeHttpSeedRequest(req, res)) {
         return;
     }
     const db = admin.firestore();
@@ -1085,15 +1097,12 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
         res.status(405).json({ ok: false, error: 'Use POST' });
         return;
     }
-    const key = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
-    const expected = (process.env.SEED_KEY ?? 'cotidyfit-seed-2026').trim();
-    if (key !== expected) {
-        res.status(401).json({ ok: false, error: 'Unauthorized' });
+    if (!authorizeHttpSeedRequest(req, res)) {
         return;
     }
     const db = admin.firestore();
     const ts = admin.firestore.FieldValue.serverTimestamp();
-    const achievements = [
+    const fallbackAchievements = [
         {
             id: 'first_workout',
             title: 'Primer entrenamiento',
@@ -1102,6 +1111,7 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
             category: 'entrenamiento',
             conditionType: 'workouts_completed',
             conditionValue: 1,
+            difficulty: 'easy',
         },
         {
             id: 'streak_7_days',
@@ -1111,15 +1121,17 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
             category: 'racha',
             conditionType: 'streak_days',
             conditionValue: 7,
+            difficulty: 'easy',
         },
         {
             id: 'hydrated_2000',
             title: 'Hidratado',
             description: 'Llega a 2000 ml de agua en un día.',
             icon: 'water_drop_outlined',
-            category: 'nutricion',
+            category: 'hidratacion',
             conditionType: 'water_ml',
             conditionValue: 2000,
+            difficulty: 'easy',
         },
         {
             id: 'mind_strong',
@@ -1129,6 +1141,7 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
             category: 'mentalidad',
             conditionType: 'meditation_days',
             conditionValue: 5,
+            difficulty: 'easy',
         },
         {
             id: 'workouts_10',
@@ -1138,6 +1151,7 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
             category: 'entrenamiento',
             conditionType: 'workouts_completed',
             conditionValue: 10,
+            difficulty: 'medium',
         },
         {
             id: 'first_week_program',
@@ -1147,8 +1161,52 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
             category: 'progreso',
             conditionType: 'weekly_program_completed',
             conditionValue: 1,
+            difficulty: 'easy',
         },
     ];
+    const rawBodyText = Buffer.isBuffer(req.rawBody)
+        ? req.rawBody.toString('utf8')
+        : typeof req.rawBody === 'string'
+            ? req.rawBody
+            : '';
+    let sourceText = typeof req.body?.sourceText === 'string'
+        ? req.body.sourceText
+        : typeof req.body?.text === 'string'
+            ? req.body.text
+            : '';
+    if (!sourceText.trim() && rawBodyText.trim()) {
+        try {
+            const parsedRaw = JSON.parse(rawBodyText);
+            if (typeof parsedRaw === 'string') {
+                try {
+                    const parsedNested = JSON.parse(parsedRaw);
+                    sourceText =
+                        typeof parsedNested?.sourceText === 'string'
+                            ? parsedNested.sourceText
+                            : typeof parsedNested?.text === 'string'
+                                ? parsedNested.text
+                                : parsedRaw;
+                }
+                catch (_nestedError) {
+                    sourceText = parsedRaw;
+                }
+            }
+            else {
+                sourceText =
+                    typeof parsedRaw?.sourceText === 'string'
+                        ? parsedRaw.sourceText
+                        : typeof parsedRaw?.text === 'string'
+                            ? parsedRaw.text
+                            : rawBodyText;
+            }
+        }
+        catch (_error) {
+            sourceText = rawBodyText;
+        }
+    }
+    const achievements = sourceText.trim().length > 0
+        ? parseAchievementsCatalogText(sourceText)
+        : fallbackAchievements;
     const batch = db.batch();
     for (const a of achievements) {
         const ref = db.collection('achievementsCatalog').doc(a.id);
@@ -1161,6 +1219,114 @@ exports.seedAchievementsCatalog = functions.https.onRequest(async (req, res) => 
         inserted: achievements.length,
     });
 });
+function normalizeAchievementSeedKey(input) {
+    const raw = String(input ?? '').trim();
+    const noDiacritics = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return noDiacritics
+        .toLowerCase()
+        .replace(/[()]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_]/g, '');
+}
+function parseAchievementSeedInt(value, context) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid int for ${context}: ${String(value ?? '')}`);
+    }
+    return parsed;
+}
+function parseAchievementSeedDifficulty(value, context) {
+    const difficulty = String(value ?? '').trim().toLowerCase();
+    if (difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard') {
+        return difficulty;
+    }
+    throw new Error(`Invalid difficulty for ${context}: ${String(value ?? '')}`);
+}
+function parseAchievementsCatalogText(text) {
+    const lines = String(text ?? '').split(/\r?\n/);
+    const parsed = [];
+    let current = null;
+    const finishCurrent = () => {
+        if (!current)
+            return;
+        if (!current.id)
+            throw new Error('Missing ID in achievement block');
+        if (!current.title)
+            throw new Error(`Missing title for ${current.id}`);
+        if (!current.description)
+            throw new Error(`Missing description for ${current.id}`);
+        if (!current.icon)
+            throw new Error(`Missing icon for ${current.id}`);
+        if (!current.category)
+            throw new Error(`Missing category for ${current.id}`);
+        if (!current.conditionType)
+            throw new Error(`Missing conditionType for ${current.id}`);
+        if (!Number.isFinite(current.conditionValue)) {
+            throw new Error(`Missing target for ${current.id}`);
+        }
+        current.difficulty = parseAchievementSeedDifficulty(current.difficulty, current.id);
+        parsed.push(current);
+        current = null;
+    };
+    for (const line of lines) {
+        const idMatch = line.match(/^\s*\d+\)\s*ID:\s*(.+?)\s*$/);
+        if (idMatch) {
+            finishCurrent();
+            current = {
+                id: idMatch[1].trim(),
+                title: '',
+                description: '',
+                icon: '',
+                category: '',
+                conditionType: '',
+                conditionValue: Number.NaN,
+                difficulty: 'easy',
+            };
+            continue;
+        }
+        if (!current)
+            continue;
+        const kvMatch = line.match(/^\s*([^:]+?)\s*:\s*(.*?)\s*$/);
+        if (!kvMatch)
+            continue;
+        const key = normalizeAchievementSeedKey(kvMatch[1]);
+        const value = kvMatch[2];
+        switch (key) {
+            case 'titulo':
+                current.title = String(value ?? '').trim();
+                break;
+            case 'descripcion':
+                current.description = String(value ?? '').trim();
+                break;
+            case 'icon':
+                current.icon = String(value ?? '').trim();
+                break;
+            case 'category':
+                current.category = String(value ?? '').trim();
+                break;
+            case 'conditiontype':
+                current.conditionType = String(value ?? '').trim();
+                break;
+            case 'difficulty':
+                current.difficulty = parseAchievementSeedDifficulty(value, current.id);
+                break;
+            case 'target':
+                current.conditionValue = parseAchievementSeedInt(value, current.id);
+                break;
+            default:
+                break;
+        }
+    }
+    finishCurrent();
+    const seen = new Set();
+    for (const item of parsed) {
+        if (seen.has(item.id)) {
+            throw new Error(`Duplicate achievement ID: ${item.id}`);
+        }
+        seen.add(item.id);
+    }
+    return parsed;
+}
 exports.onUserTaskReminderChanged = functions.firestore
     .document('users/{userId}/tasks/{taskId}')
     .onWrite(async (change, context) => {
@@ -1302,6 +1468,105 @@ function weeklyChallengesSeedData() {
             targetValue: 7,
             rewardCFBonus: 18,
         },
+        {
+            id: 'weekly_steps_60k',
+            order: 6,
+            title: '60k pasos en 7 días',
+            description: 'Acumula 60.000 pasos a lo largo de la semana.',
+            targetType: 'steps',
+            targetValue: 60000,
+            rewardCFBonus: 20,
+        },
+        {
+            id: 'weekly_hydration_16l',
+            order: 7,
+            title: '16L de hidratación',
+            description: 'Mantén una hidratación alta y llega a 16 litros semanales.',
+            targetType: 'waterMl',
+            targetValue: 16000,
+            rewardCFBonus: 14,
+        },
+        {
+            id: 'weekly_workouts_7',
+            order: 8,
+            title: '7 entrenamientos',
+            description: 'Completa 7 entrenamientos durante la semana.',
+            targetType: 'workouts',
+            targetValue: 7,
+            rewardCFBonus: 22,
+        },
+        {
+            id: 'weekly_habit_days_5',
+            order: 9,
+            title: '5 días de hábitos activos',
+            description: 'Cumple al menos un hábito en 5 días diferentes.',
+            targetType: 'habitActiveDays',
+            targetValue: 5,
+            rewardCFBonus: 16,
+        },
+        {
+            id: 'weekly_habits_24',
+            order: 10,
+            title: '24 hábitos completados',
+            description: 'Llega a 24 hábitos completados en total esta semana.',
+            targetType: 'habitsCompleted',
+            targetValue: 24,
+            rewardCFBonus: 20,
+        },
+    ];
+}
+function communityGroupsSeedData() {
+    return [
+        {
+            id: 'cg_gym_diario',
+            order: 1,
+            title: 'Gym diario',
+            emoji: '🏋️',
+            category: 'Gimnasio',
+            description: 'Entrenos, maquinas, progresos y constancia dentro del gym.',
+            introMessage: 'Este grupo es para hablar de entrenos en gimnasio, resolver dudas de maquinas, compartir progresos y mantener la constancia con buen ambiente.',
+            active: true,
+        },
+        {
+            id: 'cg_comida_saludable',
+            order: 2,
+            title: 'Comida saludable',
+            emoji: '🥗',
+            category: 'Nutricion',
+            description: 'Ideas faciles para comer mejor sin hacerlo complicado.',
+            introMessage: 'Aqui compartimos recetas practicas, compras inteligentes, trucos para organizar comidas y formas reales de comer mejor en el dia a dia.',
+            active: true,
+        },
+        {
+            id: 'cg_aire_libre',
+            order: 3,
+            title: 'Entrenamiento al aire libre',
+            emoji: '🌿',
+            category: 'Outdoor',
+            description: 'Parques, calistenia, paseos activos y sesiones fuera de casa.',
+            introMessage: 'Pensado para quien entrena fuera de casa: parques, paseos activos, circuitos sencillos y motivacion para moverse aunque no haya gimnasio.',
+            active: true,
+        },
+        {
+            id: 'cg_running',
+            order: 4,
+            title: 'Salir a correr',
+            emoji: '🏃',
+            category: 'Running',
+            description: 'Rodajes, objetivos de carrera y volver a correr con cabeza.',
+            introMessage: 'Grupo para hablar de rodajes, ritmos, material, volver a correr sin lesionarse y celebrar cada salida, aunque sea corta.',
+            active: true,
+        },
+        {
+            id: 'cg_habitos_motivacion',
+            order: 5,
+            title: 'Habitos y motivacion',
+            emoji: '🔥',
+            category: 'Habitos',
+            description: 'Constancia, energia, descanso y pequenos pasos que se sostienen.',
+            introMessage: 'Este espacio sirve para apoyarse en la constancia: pequenos objetivos, motivacion realista, descanso y habitos que se mantienen en semanas normales.',
+            active: true,
+        },
     ];
 }
 // ── Seed weekly challenges (temporary utility) ───────────────────────
@@ -1310,10 +1575,7 @@ exports.seedWeeklyChallengesHttp = functions.https.onRequest(async (req, res) =>
         res.status(405).json({ ok: false, error: 'Use POST' });
         return;
     }
-    const key = (req.header('x-seed-key') ?? req.query.key ?? '').trim();
-    const expected = (process.env.SEED_KEY ?? 'cotidyfit-seed-2026').trim();
-    if (key !== expected) {
-        res.status(401).json({ ok: false, error: 'Unauthorized' });
+    if (!authorizeHttpSeedRequest(req, res)) {
         return;
     }
     const challenges = weeklyChallengesSeedData();
@@ -1329,6 +1591,28 @@ exports.seedWeeklyChallengesHttp = functions.https.onRequest(async (req, res) =>
     }
     await batch.commit();
     res.status(200).json({ ok: true, seeded: challenges.length });
+});
+exports.seedCommunityGroupsHttp = functions.https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.status(405).json({ ok: false, error: 'Use POST' });
+        return;
+    }
+    if (!authorizeHttpSeedRequest(req, res)) {
+        return;
+    }
+    const groups = communityGroupsSeedData();
+    const db = admin.firestore();
+    const batch = db.batch();
+    for (const group of groups) {
+        const ref = db.collection('communityGroups').doc(group.id);
+        batch.set(ref, {
+            ...group,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    }
+    await batch.commit();
+    res.status(200).json({ ok: true, seeded: groups.length });
 });
 function asString(value) {
     if (value == null)

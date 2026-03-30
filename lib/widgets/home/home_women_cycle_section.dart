@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../models/recipe_model.dart';
 import '../../models/user_profile.dart';
 import '../../models/workout.dart';
+import '../../screens/women_cycle_history_screen.dart';
 import '../../screens/nutrition/recipe_detail_screen.dart';
 import '../../screens/workout_detail_screen.dart';
 import '../../services/recipe_repository.dart';
@@ -172,6 +173,16 @@ class _HomeWomenCycleSectionState extends State<HomeWomenCycleSection> {
     );
   }
 
+  Future<void> _openCycleHistory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WomenCycleHistoryScreen(profile: widget.profile),
+      ),
+    );
+    if (!mounted) return;
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isFemale) return const SizedBox.shrink();
@@ -197,10 +208,12 @@ class _HomeWomenCycleSectionState extends State<HomeWomenCycleSection> {
       return 'Última regla terminó hace $daysAgo día(s).';
     }
 
-    return ProgressSectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return GestureDetector(
+      onTap: _openCycleHistory,
+      child: ProgressSectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Row(
             children: [
               const Icon(Icons.female_outlined),
@@ -211,6 +224,11 @@ class _HomeWomenCycleSectionState extends State<HomeWomenCycleSection> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
+              Icon(
+                Icons.chevron_right,
+                color: context.cfTextSecondary,
+              ),
+              const SizedBox(width: 8),
               if (isActive)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -240,6 +258,14 @@ class _HomeWomenCycleSectionState extends State<HomeWomenCycleSection> {
           ),
           const SizedBox(height: 8),
           Text(statusText(), style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Toca esta tarjeta para ver tu historial y tus fechas guardadas.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: context.cfTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           if (cycle != null) ...[
             const SizedBox(height: 4),
             Text(
@@ -290,6 +316,12 @@ class _HomeWomenCycleSectionState extends State<HomeWomenCycleSection> {
                         icon: const Icon(Icons.water_drop_outlined),
                         label: const Text('Tengo la regla'),
                       ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: _openCycleHistory,
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: const Text('Ver historial'),
               ),
             ],
           ),
@@ -513,7 +545,8 @@ class _HomeWomenCycleSectionState extends State<HomeWomenCycleSection> {
                 const SizedBox(height: 10),
               ],
           ],
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/recipe_model.dart';
 import '../progress/progress_section_card.dart';
+import 'nutrition_text_utils.dart';
 import 'recipe_media.dart';
 
 class RecipeCard extends StatelessWidget {
@@ -22,6 +23,7 @@ class RecipeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = context.cfPrimary;
+    final title = normalizeNutritionCardText(recipe.name);
     return ProgressSectionCard(
       padding: const EdgeInsets.all(12),
       child: InkWell(
@@ -33,19 +35,19 @@ class RecipeCard extends StatelessWidget {
               tag: 'recipe_${recipe.id}',
               child: RecipeMedia(
                 imageUrl: recipe.imageUrl,
-                width: 86,
-                height: 86,
+                width: 80,
+                height: 80,
                 borderRadius: 18,
                 iconSize: 28,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    recipe.name,
+                    title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(

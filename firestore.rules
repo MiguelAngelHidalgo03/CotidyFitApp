@@ -3,18 +3,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function _isAllowlistedAdminEmail() {
-      return request.auth != null
-        && request.auth.token.email is string
-        && request.auth.token.email == 'cotidyfit@gmail.com';
-    }
-
     function _isAdmin() {
       return request.auth != null
-        && (
-          _isAllowlistedAdminEmail()
-          || exists(/databases/$(database)/documents/admin_users/$(request.auth.uid))
-        );
+        && exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
     }
 
     function _pairContainsUid(pairId, uid) {
@@ -154,6 +145,11 @@ service cloud.firestore {
     }
 
     match /weeklyChallenges/{challengeId} {
+      allow get, list: if request.auth != null;
+      allow create, update, delete: if _isAdmin();
+    }
+
+    match /daily_notifications_messages/{messageId} {
       allow get, list: if request.auth != null;
       allow create, update, delete: if _isAdmin();
     }

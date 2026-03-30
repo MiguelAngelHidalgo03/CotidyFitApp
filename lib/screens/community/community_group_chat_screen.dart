@@ -420,6 +420,10 @@ class _CommunityGroupChatScreenState extends State<CommunityGroupChatScreen> {
             : (widget.initialTitle?.trim().isNotEmpty == true
                   ? widget.initialTitle!.trim()
                   : 'Comunidad');
+        final introMessage =
+            (groupData?['introMessage'] as String?)?.trim().isNotEmpty == true
+            ? (groupData?['introMessage'] as String).trim()
+            : ((groupData?['description'] as String?)?.trim() ?? '');
 
         return StreamBuilder<bool>(
           stream: _watchCanPost(user.uid),
@@ -635,6 +639,24 @@ class _CommunityGroupChatScreenState extends State<CommunityGroupChatScreen> {
                                   }
                                   _latestMessages = messages;
 
+                                  if (messages.isEmpty &&
+                                      introMessage.trim().isNotEmpty) {
+                                    return ListView(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        14,
+                                        16,
+                                        14,
+                                      ),
+                                      children: [
+                                        _CommunityIntroCard(
+                                          title: title,
+                                          message: introMessage,
+                                        ),
+                                      ],
+                                    );
+                                  }
+
                                   return ListView.builder(
                                     padding: const EdgeInsets.fromLTRB(
                                       16,
@@ -771,10 +793,10 @@ class _CommunityGroupChatScreenState extends State<CommunityGroupChatScreen> {
                                 12,
                               ),
                               decoration: BoxDecoration(
-                                color: CFColors.background,
+                                color: context.cfBackground,
                                 border: Border(
                                   top: BorderSide(
-                                    color: CFColors.softGray.withValues(
+                                    color: context.cfBorder.withValues(
                                       alpha: 0.9,
                                     ),
                                   ),
@@ -788,6 +810,10 @@ class _CommunityGroupChatScreenState extends State<CommunityGroupChatScreen> {
                                       enabled: canPost,
                                       minLines: 1,
                                       maxLines: 1,
+                                      style: TextStyle(
+                                        color: context.cfTextPrimary,
+                                      ),
+                                      cursorColor: context.cfPrimary,
                                       textInputAction: TextInputAction.send,
                                       onSubmitted: (_) => canPost
                                           ? _sendText(uid: user.uid)
@@ -797,26 +823,45 @@ class _CommunityGroupChatScreenState extends State<CommunityGroupChatScreen> {
                                             ? 'Escribe un mensaje…'
                                             : 'Solo lectura',
                                         filled: true,
-                                        fillColor: CFColors.surface,
+                                        fillColor: context.cfSurface,
+                                        hintStyle: TextStyle(
+                                          color: context.cfTextSecondary,
+                                        ),
                                         contentPadding:
                                             const EdgeInsets.symmetric(
                                               horizontal: 14,
                                               vertical: 12,
                                             ),
-                                        border: const OutlineInputBorder(
+                                        border: OutlineInputBorder(
                                           borderRadius: BorderRadius.all(
                                             Radius.circular(18),
                                           ),
                                           borderSide: BorderSide(
-                                            color: CFColors.softGray,
+                                            color: context.cfBorder,
                                           ),
                                         ),
-                                        enabledBorder: const OutlineInputBorder(
+                                        enabledBorder: OutlineInputBorder(
                                           borderRadius: BorderRadius.all(
                                             Radius.circular(18),
                                           ),
                                           borderSide: BorderSide(
-                                            color: CFColors.softGray,
+                                            color: context.cfBorder,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: const BorderRadius.all(
+                                            Radius.circular(18),
+                                          ),
+                                          borderSide: BorderSide(
+                                            color: context.cfPrimary,
+                                          ),
+                                        ),
+                                        disabledBorder: OutlineInputBorder(
+                                          borderRadius: const BorderRadius.all(
+                                            Radius.circular(18),
+                                          ),
+                                          borderSide: BorderSide(
+                                            color: context.cfBorder,
                                           ),
                                         ),
                                       ),
@@ -894,6 +939,8 @@ class CommunityGroupInfoScreen extends StatelessWidget {
                       ? initialTitle!.trim()
                       : gid);
             final description = (data?['description'] as String?)?.trim() ?? '';
+            final introMessage =
+                (data?['introMessage'] as String?)?.trim() ?? '';
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -918,6 +965,10 @@ class CommunityGroupInfoScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (introMessage.isNotEmpty) ...[
+                  _CommunityIntroCard(title: title, message: introMessage),
+                  const SizedBox(height: 12),
+                ],
                 ProgressSectionCard(
                   child: Text(
                     'Solo usuarios admitidos pueden escribir.',
@@ -930,6 +981,46 @@ class CommunityGroupInfoScreen extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _CommunityIntroCard extends StatelessWidget {
+  const _CommunityIntroCard({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return ProgressSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline, color: context.cfPrimary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Antes de empezar en $title',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: CFColors.textSecondary,
+              height: 1.35,
+            ),
+          ),
+        ],
       ),
     );
   }

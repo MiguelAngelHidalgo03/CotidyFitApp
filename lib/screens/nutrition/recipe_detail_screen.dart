@@ -14,6 +14,7 @@ import '../../services/recipe_repository.dart';
 import '../../services/recipes_repository_factory.dart';
 import '../../services/settings_service.dart';
 import '../../widgets/nutrition/recipe_media.dart';
+import '../../widgets/nutrition/nutrition_text_utils.dart';
 import '../../widgets/progress/progress_section_card.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -364,10 +365,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     final goalLabel = (_profile?.goal.trim().isNotEmpty ?? false)
         ? _profile!.goal
         : 'tu perfil';
+    final recipeTitle = normalizeNutritionCardText(r.name);
+    final recipeCountry = normalizeNutritionCardText(r.country);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(r.name),
+        title: Text(
+          recipeTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           IconButton(
             tooltip: 'Favorito',
@@ -403,39 +410,36 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          r.name,
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w900),
-                        ),
+                  Text(
+                    recipeTitle,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.justify,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      height: 1.18,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.cfPrimaryTint,
+                      borderRadius: const BorderRadius.all(
+                        Radius.circular(999),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.cfPrimaryTint,
-                          borderRadius: const BorderRadius.all(
-                            Radius.circular(999),
-                          ),
-                          border: Border.all(
-                            color: context.cfPrimaryTintStrong,
-                          ),
-                        ),
-                        child: Text(
-                          r.country,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: context.cfPrimary,
-                                fontWeight: FontWeight.w900,
-                              ),
-                        ),
+                      border: Border.all(color: context.cfPrimaryTintStrong),
+                    ),
+                    child: Text(
+                      recipeCountry,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.cfPrimary,
+                        fontWeight: FontWeight.w900,
                       ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Wrap(

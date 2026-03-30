@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/daily_data_model.dart';
 import '../../services/daily_data_service.dart';
+import '../../services/home_remote_content_service.dart';
 
 class HomeExtrasSection extends StatelessWidget {
   const HomeExtrasSection({
@@ -1083,28 +1084,38 @@ class _PremiumPromoCard extends StatelessWidget {
 class _MotivationalFooter extends StatelessWidget {
   const _MotivationalFooter();
 
+  static const List<String> _fallbackQuotes = <String>[
+    'Pequeños hábitos, grandes cambios.',
+    'Hoy cuenta. Hazlo simple.',
+    'Constancia > perfección.',
+    'Un día a la vez.',
+    'Tu salud es tu mejor inversión.',
+  ];
+
+  static const HomeRemoteContentService _contentService =
+      HomeRemoteContentService();
+
   @override
   Widget build(BuildContext context) {
-    final quotes = <String>[
-      'Pequeños hábitos, grandes cambios.',
-      'Hoy cuenta. Hazlo simple.',
-      'Constancia > perfección.',
-      'Un día a la vez.',
-      'Tu salud es tu mejor inversión.',
-    ];
-
-    final now = DateTime.now();
-    final idx = (now.year + now.month + now.day) % quotes.length;
-
-    return Center(
-      child: Text(
-        '“${quotes[idx]}”',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: context.cfTextSecondary,
-        ),
-      ),
+    return StreamBuilder<List<String>>(
+      stream: _contentService.watchStartQuotes(fallback: _fallbackQuotes),
+      initialData: _fallbackQuotes,
+      builder: (context, snapshot) {
+        final quote = _contentService.quoteForToday(
+          snapshot.data ?? _fallbackQuotes,
+          DateTime.now(),
+        );
+        return Center(
+          child: Text(
+            quote.isEmpty ? '' : '“$quote”',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: context.cfTextSecondary,
+            ),
+          ),
+        );
+      },
     );
   }
 }

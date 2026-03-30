@@ -51,6 +51,7 @@ Future<void> main() async {
     unawaited(ConnectivityService.instance.initialize());
     unawaited(OfflineSyncQueueService.instance.initialize());
     unawaited(TaskReminderService.instance.initialize());
+    unawaited(TaskReminderService.instance.syncStoredDailyCheckInReminder());
   });
 }
 

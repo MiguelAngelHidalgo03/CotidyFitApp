@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/nutrition_template_model.dart';
 import '../progress/progress_section_card.dart';
+import 'nutrition_text_utils.dart';
 
 class NutritionTemplateCard extends StatelessWidget {
   const NutritionTemplateCard({
@@ -32,6 +33,7 @@ class NutritionTemplateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = normalizeNutritionCardText(template.name);
     return ProgressSectionCard(
       child: InkWell(
         onTap: onTap,
@@ -47,10 +49,10 @@ class NutritionTemplateCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        template.name,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge
                             ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                       if (template.description.trim().isNotEmpty) ...[
@@ -59,17 +61,18 @@ class NutritionTemplateCard extends StatelessWidget {
                           template.description,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                          ?.copyWith(color: context.cfTextSecondary),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: context.cfTextSecondary),
                         ),
                       ],
                     ],
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 6),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   tooltip: liked ? 'Quitar like' : 'Dar like',
                   onPressed: onToggleLike,
                   icon: Icon(
@@ -82,20 +85,14 @@ class NutritionTemplateCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                _StatChip(
-                  icon: Icons.star,
-                  label: _ratingLabel,
-                ),
+                _StatChip(icon: Icons.star, label: _ratingLabel),
                 const SizedBox(width: 10),
                 _StatChip(
                   icon: Icons.favorite,
                   label: '${template.totalLikes}',
                 ),
                 const Spacer(),
-                _RatingRow(
-                  value: myRating,
-                  onRate: onRate,
-                ),
+                _RatingRow(value: myRating, onRate: onRate),
               ],
             ),
             if (showNutritionValues) ...[
@@ -141,9 +138,9 @@ class _StatChip extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: context.cfTextPrimary,
-                ),
+              fontWeight: FontWeight.w800,
+              color: context.cfTextPrimary,
+            ),
           ),
         ],
       ),
@@ -167,10 +164,9 @@ class _Pill extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .bodyMedium
-            ?.copyWith(color: context.cfTextPrimary),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: context.cfTextPrimary),
       ),
     );
   }

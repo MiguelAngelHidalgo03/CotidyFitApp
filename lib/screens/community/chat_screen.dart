@@ -101,9 +101,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final chatRef = FirebaseFirestore.instance.collection('chats').doc(chatId);
     try {
-      await chatRef.update({
-        'unreadCountByUser.${currentUser.uid}': 0,
-      });
+      await chatRef.update({'unreadCountByUser.${currentUser.uid}': 0});
     } catch (_) {
       // Best-effort; don't break streams/UI.
     }
@@ -406,7 +404,11 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'Activo';
   }
 
-  Future<void> _send(MessageType type, String text, {Map<String, Object?>? share}) async {
+  Future<void> _send(
+    MessageType type,
+    String text, {
+    Map<String, Object?>? share,
+  }) async {
     if (text.trim().isEmpty) return;
 
     if (_isProfessionalLocked) return;
@@ -434,7 +436,12 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
 
-      await _social.sendMessage(chatId: chatId, type: type, text: text, share: share);
+      await _social.sendMessage(
+        chatId: chatId,
+        type: type,
+        text: text,
+        share: share,
+      );
       _textCtrl.clear();
       return;
     }
@@ -442,7 +449,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.scope == ChatScope.community) {
       if (chat == null) return;
       if (chat.readOnly) return;
-      await _communityRepo.sendMessage(chatId: chat.id, type: type, text: text, share: share);
+      await _communityRepo.sendMessage(
+        chatId: chat.id,
+        type: type,
+        text: text,
+        share: share,
+      );
     } else if (widget.scope == ChatScope.privateChat) {
       if (chat == null) return;
       await _privateRepo.sendMessageToChat(
@@ -593,14 +605,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
                       itemCount: options.length,
-                          separatorBuilder: (context, index) =>
-                            const Divider(height: 1),
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final o = options[index];
-                        final subtitle =
-                            (o.subtitle ?? '').trim().isNotEmpty
-                                ? o.subtitle!.trim()
-                                : o.payload;
+                        final subtitle = (o.subtitle ?? '').trim().isNotEmpty
+                            ? o.subtitle!.trim()
+                            : o.payload;
                         return _PlusItem(
                           icon: iconFor(picked),
                           title: o.title,
@@ -1123,8 +1134,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                                   if (value == 'report') {
                                     final ctrl = TextEditingController();
-                                    final reason =
-                                        await showDialog<String>(
+                                    final reason = await showDialog<String>(
                                       context: context,
                                       builder: (context) {
                                         return AlertDialog(
@@ -1136,9 +1146,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                             children: [
                                               Text(
                                                 'Describe el motivo del reporte.',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyMedium,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodyMedium,
                                               ),
                                               const SizedBox(height: 10),
                                               TextField(
@@ -1146,23 +1156,22 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 maxLines: 3,
                                                 decoration:
                                                     const InputDecoration(
-                                                  hintText:
-                                                      'Ej: spam, insultos…',
-                                                ),
+                                                      hintText:
+                                                          'Ej: spam, insultos…',
+                                                    ),
                                               ),
                                             ],
                                           ),
                                           actions: [
                                             TextButton(
                                               onPressed: () =>
-                                                  Navigator.of(context)
-                                                      .pop(),
+                                                  Navigator.of(context).pop(),
                                               child: const Text('Cancelar'),
                                             ),
                                             TextButton(
-                                              onPressed: () =>
-                                                  Navigator.of(context)
-                                                      .pop(ctrl.text),
+                                              onPressed: () => Navigator.of(
+                                                context,
+                                              ).pop(ctrl.text),
                                               child: const Text('Enviar'),
                                             ),
                                           ],
@@ -1179,19 +1188,17 @@ class _ChatScreenState extends State<ChatScreen> {
                                       await FirebaseFirestore.instance
                                           .collection('reports')
                                           .add({
-                                        'reportedBy': myUid,
-                                        'reportedUserId': peerUid,
-                                        'reason': cleaned,
-                                        'chatId': chatId,
-                                        'kind': 'dm',
-                                        'createdAt':
-                                            FieldValue.serverTimestamp(),
-                                      });
+                                            'reportedBy': myUid,
+                                            'reportedUserId': peerUid,
+                                            'reason': cleaned,
+                                            'chatId': chatId,
+                                            'kind': 'dm',
+                                            'createdAt':
+                                                FieldValue.serverTimestamp(),
+                                          });
                                       snack('Reporte enviado. Gracias.');
                                     } catch (_) {
-                                      snack(
-                                        'No se pudo enviar el reporte.',
-                                      );
+                                      snack('No se pudo enviar el reporte.');
                                     }
                                   }
                                 },
@@ -1630,9 +1637,9 @@ class _Composer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
-        color: CFColors.background,
+        color: context.cfBackground,
         border: Border(
-          top: BorderSide(color: CFColors.softGray.withValues(alpha: 0.9)),
+          top: BorderSide(color: context.cfBorder.withValues(alpha: 0.9)),
         ),
       ),
       child: Row(
@@ -1648,23 +1655,34 @@ class _Composer extends StatelessWidget {
               enabled: enabled,
               minLines: 1,
               maxLines: 1,
+              style: TextStyle(color: context.cfTextPrimary),
+              cursorColor: context.cfPrimary,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => enabled ? onSend() : null,
               decoration: InputDecoration(
                 hintText: enabled ? 'Escribe un mensaje…' : 'Solo lectura',
                 filled: true,
-                fillColor: CFColors.surface,
+                fillColor: context.cfSurface,
+                hintStyle: TextStyle(color: context.cfTextSecondary),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 12,
                 ),
-                border: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(18)),
-                  borderSide: BorderSide(color: CFColors.softGray),
+                border: OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  borderSide: BorderSide(color: context.cfBorder),
                 ),
-                enabledBorder: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(18)),
-                  borderSide: BorderSide(color: CFColors.softGray),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  borderSide: BorderSide(color: context.cfBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  borderSide: BorderSide(color: context.cfPrimary),
+                ),
+                disabledBorder: OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  borderSide: BorderSide(color: context.cfBorder),
                 ),
               ),
             ),
