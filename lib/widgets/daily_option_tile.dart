@@ -18,6 +18,8 @@ class DailyOptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textColor = enabled ? context.cfTextPrimary : context.cfTextSecondary;
+
     return Card(
       child: InkWell(
         borderRadius: const BorderRadius.all(Radius.circular(18)),
@@ -35,8 +37,7 @@ class DailyOptionTile extends StatelessWidget {
                 child: Text(
                   label,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color:
-                            enabled ? CFColors.textPrimary : CFColors.textSecondary,
+                        color: textColor,
                         fontWeight: FontWeight.w600,
                       ),
                 ),

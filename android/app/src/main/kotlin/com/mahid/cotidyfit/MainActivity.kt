@@ -1,4 +1,4 @@
-package com.example.cotidyfitapp
+package com.mahid.cotidyfit
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

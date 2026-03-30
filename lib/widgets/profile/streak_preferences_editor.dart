@@ -22,6 +22,12 @@ class StreakPreferencesEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final summaryBackground = context.cfPrimary.withValues(
+      alpha: context.cfIsDark ? 0.18 : 0.06,
+    );
+    final summaryBorder = context.cfPrimary.withValues(
+      alpha: context.cfIsDark ? 0.32 : 0.16,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,9 +83,9 @@ class StreakPreferencesEditor extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: CFColors.primary.withValues(alpha: 0.06),
+            color: summaryBackground,
             borderRadius: const BorderRadius.all(Radius.circular(18)),
-            border: Border.all(color: CFColors.primary.withValues(alpha: 0.16)),
+            border: Border.all(color: summaryBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,7 +94,7 @@ class StreakPreferencesEditor extends StatelessWidget {
                 value.title,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   fontWeight: FontWeight.w900,
-                  color: CFColors.textPrimary,
+                  color: context.cfTextPrimary,
                 ),
               ),
               const SizedBox(height: 6),
@@ -139,7 +145,12 @@ class _FocusAreaTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final iconColor = selected ? CFColors.primary : CFColors.textSecondary;
+    final borderColor = selected ? context.cfPrimary : context.cfBorder;
+    final tileColor = selected ? context.cfPrimaryTint : context.cfSurface;
+    final iconColor = selected ? context.cfPrimary : context.cfTextSecondary;
+    final iconBackgroundColor = selected
+        ? context.cfPrimaryTintStrong
+        : context.cfMutedSurface;
 
     return Material(
       color: Colors.transparent,
@@ -150,12 +161,10 @@ class _FocusAreaTile extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: selected
-                ? CFColors.primary.withValues(alpha: 0.08)
-                : CFColors.surface,
+            color: tileColor,
             borderRadius: const BorderRadius.all(Radius.circular(18)),
             border: Border.all(
-              color: selected ? CFColors.primary : CFColors.softGray,
+              color: borderColor,
               width: selected ? 1.6 : 1,
             ),
           ),
@@ -165,9 +174,7 @@ class _FocusAreaTile extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: selected
-                      ? CFColors.primary.withValues(alpha: 0.14)
-                      : CFColors.softGray.withValues(alpha: 0.8),
+                  color: iconBackgroundColor,
                   borderRadius: const BorderRadius.all(Radius.circular(12)),
                 ),
                 child: Icon(_iconFor(area), color: iconColor),
@@ -193,7 +200,7 @@ class _FocusAreaTile extends StatelessWidget {
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked,
-                color: selected ? CFColors.primary : CFColors.textSecondary,
+                color: selected ? context.cfPrimary : context.cfTextSecondary,
               ),
             ],
           ),
@@ -234,6 +241,8 @@ class _MixModeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final borderColor = selected ? context.cfPrimary : context.cfBorder;
+    final tileColor = selected ? context.cfPrimaryTint : context.cfSurface;
 
     return Material(
       color: Colors.transparent,
@@ -244,12 +253,10 @@ class _MixModeTile extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: selected
-                ? CFColors.primary.withValues(alpha: 0.08)
-                : CFColors.surface,
+            color: tileColor,
             borderRadius: const BorderRadius.all(Radius.circular(18)),
             border: Border.all(
-              color: selected ? CFColors.primary : CFColors.softGray,
+              color: borderColor,
               width: selected ? 1.6 : 1,
             ),
           ),
@@ -275,7 +282,7 @@ class _MixModeTile extends StatelessWidget {
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked,
-                color: selected ? CFColors.primary : CFColors.textSecondary,
+                color: selected ? context.cfPrimary : context.cfTextSecondary,
               ),
             ],
           ),

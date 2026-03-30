@@ -1474,8 +1474,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           'Elige una hora amable para que la app te recuerde volver sin hacerse pesada.',
         ),
         ProgressSectionCard(
-          backgroundColor: CFColors.primary.withValues(alpha: 0.06),
-          borderColor: CFColors.primary.withValues(alpha: 0.16),
+          backgroundColor: context.cfPrimary.withValues(
+            alpha: context.cfIsDark ? 0.18 : 0.06,
+          ),
+          borderColor: context.cfPrimary.withValues(
+            alpha: context.cfIsDark ? 0.30 : 0.16,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1485,12 +1489,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: CFColors.primary.withValues(alpha: 0.12),
+                      color: context.cfPrimary.withValues(
+                        alpha: context.cfIsDark ? 0.26 : 0.12,
+                      ),
                       borderRadius: const BorderRadius.all(Radius.circular(16)),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.notifications_active_outlined,
-                      color: CFColors.primary,
+                      color: context.cfPrimary,
                     ),
                   ),
                   const SizedBox(width: 12),

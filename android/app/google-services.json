@@ -48,6 +48,50 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:385697279961:android:ea04d71f85f854b604b3c8",
+        "android_client_info": {
+          "package_name": "com.mahid.cotidyfit"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "385697279961-53kebfikknogu5m5e0bch7k2799ivags.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mahid.cotidyfit",
+            "certificate_hash": "08db100cd89e0de12c6a73c1b2ab4d8a637b929f"
+          }
+        },
+        {
+          "client_id": "385697279961-cn82v9r6isesv7t85utbvnilc6og066t.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdwnpUZsPemQzsK68Kg3MAVFw42ipOqfE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "385697279961-cn82v9r6isesv7t85utbvnilc6og066t.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "385697279961-36uod46r5i4ne4ue20rcs2ha724hvnu9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.cotidyfitapp"
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

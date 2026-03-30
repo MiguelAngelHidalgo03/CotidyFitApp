@@ -74,7 +74,9 @@ class PrivacyScreen extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Última actualización: 27/03/2026',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CFColors.textSecondary),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: context.cfTextSecondary),
             ),
             const SizedBox(height: 12),
             for (final section in sections) ...[
@@ -93,7 +95,7 @@ class PrivacyScreen extends StatelessWidget {
                     Text(
                       section.body,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: CFColors.textSecondary,
+                        color: context.cfTextSecondary,
                         height: 1.45,
                       ),
                     ),

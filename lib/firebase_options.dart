@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAdwnpUZsPemQzsK68Kg3MAVFw42ipOqfE',
-    appId: '1:385697279961:android:a10814b723b7060404b3c8',
+    appId: '1:385697279961:android:ea04d71f85f854b604b3c8',
     messagingSenderId: '385697279961',
     projectId: 'cotidyfitapp-bbdd',
     storageBucket: 'cotidyfitapp-bbdd.firebasestorage.app',
@@ -64,6 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '385697279961',
     projectId: 'cotidyfitapp-bbdd',
     storageBucket: 'cotidyfitapp-bbdd.firebasestorage.app',
+    androidClientId: '385697279961-4hdm3jiajoejtcb87jhbj4avr2cma2fv.apps.googleusercontent.com',
     iosClientId: '385697279961-36uod46r5i4ne4ue20rcs2ha724hvnu9.apps.googleusercontent.com',
     iosBundleId: 'com.example.cotidyfitapp',
   );
@@ -74,6 +75,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '385697279961',
     projectId: 'cotidyfitapp-bbdd',
     storageBucket: 'cotidyfitapp-bbdd.firebasestorage.app',
+    androidClientId: '385697279961-4hdm3jiajoejtcb87jhbj4avr2cma2fv.apps.googleusercontent.com',
     iosClientId: '385697279961-36uod46r5i4ne4ue20rcs2ha724hvnu9.apps.googleusercontent.com',
     iosBundleId: 'com.example.cotidyfitapp',
   );
